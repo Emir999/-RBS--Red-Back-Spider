@@ -22,6 +22,7 @@ import com.wavesplatform.utils.forceStopApplication
 import io.netty.channel.Channel
 import io.netty.channel.group.DefaultChannelGroup
 import io.netty.util.concurrent.GlobalEventExecutor
+import kamon.Kamon
 import scorex.account.AddressScheme
 import scorex.api.http._
 import scorex.api.http.alias.{AliasApiRoute, AliasBroadcastApiRoute}
@@ -52,7 +53,7 @@ class Application(val actorSystem: ActorSystem, val settings: WavesSettings) ext
 
     checkGenesis()
 
-    if (wallet.privateKeyAccounts().isEmpty)
+    if (!wallet.nonEmpty)
       wallet.generateNewAccounts(1)
 
     val feeCalculator = new FeeCalculator(settings.feesSettings)
@@ -78,7 +79,6 @@ class Application(val actorSystem: ActorSystem, val settings: WavesSettings) ext
       BlocksApiRoute(settings.restAPISettings, settings.checkpointsSettings, history, allChannels, checkpointService, blockchainUpdater),
       TransactionsApiRoute(settings.restAPISettings, stateReader, history, utxStorage),
       NxtConsensusApiRoute(settings.restAPISettings, stateReader, history, settings.blockchainSettings.functionalitySettings),
-      WalletApiRoute(settings.restAPISettings, wallet),
       PaymentApiRoute(settings.restAPISettings, wallet, utxStorage, allChannels, time),
       UtilsApiRoute(settings.restAPISettings),
       PeersApiRoute(settings.restAPISettings, network.connect, peerDatabase, establishedConnections),
@@ -98,7 +98,6 @@ class Application(val actorSystem: ActorSystem, val settings: WavesSettings) ext
       typeOf[BlocksApiRoute],
       typeOf[TransactionsApiRoute],
       typeOf[NxtConsensusApiRoute],
-      typeOf[WalletApiRoute],
       typeOf[PaymentApiRoute],
       typeOf[UtilsApiRoute],
       typeOf[PeersApiRoute],
@@ -230,6 +229,7 @@ object Application extends ScorexLogging {
 
     val config = readConfig(args.headOption)
     val settings = WavesSettings.fromConfig(config)
+    Kamon.start(config)
 
     RootActorSystem.start("wavesplatform", config) { actorSystem =>
       configureLogging(settings)
@@ -241,7 +241,12 @@ object Application extends ScorexLogging {
 
       log.info(s"${Constants.AgentName} Blockchain Id: ${settings.blockchainSettings.addressSchemeCharacter}")
 
-      new Application(actorSystem, settings).run()
+      new Application(actorSystem, settings) {
+        override def shutdown(): Unit = {
+          Kamon.shutdown()
+          super.shutdown()
+        }
+      }.run()
     }
   }
 }

@@ -66,17 +66,6 @@ class AddressRouteSpec
     }
   }
 
-  routePath("/seed/{address}") in {
-    val account = allAccounts.head
-    val path = routePath(s"/seed/${account.address}")
-    Get(path) ~> route should produce(ApiKeyNotValid)
-    Get(path) ~> api_key(apiKey) ~> route ~> check {
-      val json = responseAs[JsObject]
-      (json \ "address").as[String] shouldEqual account.address
-      (json \ "seed").as[String] shouldEqual Base58.encode(account.seed)
-    }
-  }
-
   routePath("/balance/{address}") in {
     val state = stub[StateReader]
     (state.accountPortfolio _).when(*).returns(Portfolio(0, mock[LeaseInfo], Map.empty))

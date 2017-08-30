@@ -1,89 +1,55 @@
 package scorex.wallet
 
-import java.io.File
+import java.io.{File, FileInputStream}
+import java.security.{KeyPairGenerator, KeyStore, PrivateKey}
 
-import com.google.common.primitives.{Bytes, Ints}
+import com.wavesplatform.crypto.Test.{alias, keyStore, pair, password}
 import com.wavesplatform.settings.WalletSettings
-import com.wavesplatform.state2.ByteStr
-import com.wavesplatform.utils.createMVStore
-import org.h2.mvstore.MVMap
-import scorex.account.{Address, PrivateKeyAccount}
-import scorex.crypto.hash.SecureCryptographicHash
+import ru.CryptoPro.JCP.JCP
+import scorex.account.{Address, PrivateKeyAccount, PublicKeyAccount}
 import scorex.transaction.ValidationError
 import scorex.transaction.ValidationError.MissingSenderPrivateKey
-import scorex.utils.{LogMVMapBuilder, ScorexLogging, randomBytes}
+import scorex.utils.ScorexLogging
+import sun.security.jca.JCAUtil
+import userSamples.KeyPairGen
 
-import scala.collection.JavaConverters._
-import scala.collection.concurrent.TrieMap
+import scala.util.{Failure, Success, Try}
 
 class Wallet private(file: Option[File], password: Array[Char]) extends AutoCloseable with ScorexLogging {
 
   private val NonceFieldName = "nonce"
 
-  private val database = createMVStore(file, Some(password))
+  private val kg = KeyPairGenerator.getInstance(JCP.GOST_EL_2012_256_NAME, JCP.PROVIDER_NAME)
+  kg.initialize(32, JCAUtil.getSecureRandom)
 
-  private val accountsPersistence: MVMap[Int, Array[Byte]] = database.openMap("privkeys", new LogMVMapBuilder[Int, Array[Byte]])
-  private val seedPersistence: MVMap[String, Array[Byte]] = database.openMap("seed", new LogMVMapBuilder[String, Array[Byte]])
-  private val noncePersistence: MVMap[String, Int] = database.openMap("nonce", new LogMVMapBuilder[String, Int])
+  val keyStore = KeyStore.getInstance(JCP.HD_STORE_NAME, JCP.PROVIDER_NAME)
+  file.foreach(f => keyStore.load(new FileInputStream(f), password))
 
-  def seed: Array[Byte] = seedPersistence.get("seed")
-
-  private val accountsCache: TrieMap[String, PrivateKeyAccount] = {
-    val accounts = accountsPersistence.asScala.keys.map(k => accountsPersistence.get(k)).map(seed => PrivateKeyAccount(seed))
-    TrieMap(accounts.map(acc => acc.address -> acc).toSeq: _*)
-  }
-
-  def privateKeyAccounts(): List[PrivateKeyAccount] = accountsCache.values.toList
-
-  def generateNewAccounts(howMany: Int): Seq[PrivateKeyAccount] =
+  def generateNewAccounts(howMany: Int): Seq[PrivateKey] =
     (1 to howMany).flatMap(_ => generateNewAccount())
 
-  def generateNewAccount(): Option[PrivateKeyAccount] = synchronized {
-    val nonce = getAndIncrementNonce()
-    val account = Wallet.generateNewAccount(seed, nonce)
-
-    val address = account.address
-    val created = if (!accountsCache.contains(address)) {
-      accountsCache += account.address -> account
-      accountsPersistence.put(accountsPersistence.lastKey() + 1, account.seed)
-      database.commit()
-      true
-    } else false
-
-    if (created) {
-      log.info("Added account #" + privateKeyAccounts().size)
-      Some(account)
-    } else None
+  def generateNewAccount(): Option[PrivateKey] = synchronized {
+    val pair = kg.generateKeyPair
+    val address = PublicKeyAccount(pair.getPublic.getEncoded).address
+    keyStore.setKeyEntry(address, pair.getPrivate, password, Array(KeyPairGen.genSelfCert(pair, "CN=Waves_2012_512, O=Waves, C=RU")))
+    Some(pair.getPrivate)
   }
 
   def deleteAccount(account: PrivateKeyAccount): Boolean = synchronized {
-    val res = accountsPersistence.asScala.keys.find { k =>
-      if (accountsPersistence.get(k) sameElements account.seed) {
-        accountsPersistence.remove(k)
-        true
-      } else false
+    keyStore.deleteEntry(account.address)
+  }
+
+  def privateKeyAccount(account: Address): Either[ValidationError, PrivateKeyAccount] = {
+    Try(keyStore.getKey(account.address, password)) match {
+      // todo construct it
+      case Success(k) => Right(PrivateKeyAccount(k))
+      case Failure(f) => Left(ValidationError.MissingSenderPrivateKey)
     }
-    database.commit()
-    accountsCache -= account.address
-    res.isDefined
   }
 
-  def privateKeyAccount(account: Address): Either[ValidationError, PrivateKeyAccount] =
-    accountsCache.get(account.address).toRight[ValidationError](MissingSenderPrivateKey)
+  def nonEmpty = keyStore.aliases().hasMoreElements
 
-
-  def close(): Unit = if (!database.isClosed) {
-    database.commit()
-    database.close()
-    accountsCache.clear()
-  }
-
-  def nonce(): Int = Option(noncePersistence.get(NonceFieldName)).getOrElse(0)
-
-  private def getAndIncrementNonce(): Int = synchronized {
-    noncePersistence.put(NonceFieldName, nonce() + 1)
-  }
-
+  def close(): Unit = ()
 }
 
 
@@ -95,30 +61,11 @@ object Wallet extends ScorexLogging {
       privKeyAcc <- w.privateKeyAccount(acc)
     } yield privKeyAcc
 
-    def exportAccountSeed(account: Address): Either[ValidationError, Array[Byte]] = w.privateKeyAccount(account).map(_.seed)
   }
 
-
-  def generateNewAccount(seed: Array[Byte], nonce: Int): PrivateKeyAccount = {
-    val accountSeed = generateAccountSeed(seed, nonce)
-    PrivateKeyAccount(accountSeed)
-  }
-
-  def generateAccountSeed(seed: Array[Byte], nonce: Int): Array[Byte] =
-    SecureCryptographicHash(Bytes.concat(Ints.toByteArray(nonce), seed))
+  def generateNewAccount(): PrivateKeyAccount = PrivateKeyAccount()
 
   def apply(settings: WalletSettings): Wallet = {
-    val wallet: Wallet = new Wallet(settings.file, settings.password.toCharArray)
-
-    if (Option(wallet.seedPersistence.get("seed")).isEmpty) {
-      val seed: ByteStr = settings.seed.getOrElse {
-        val SeedSize = 64
-        val randomSeed = ByteStr(randomBytes(SeedSize))
-        log.info(s"You random generated seed is ${randomSeed.base58}")
-        randomSeed
-      }
-      wallet.seedPersistence.put("seed", seed.arr)
-    }
-    wallet
+    new Wallet(settings.file, settings.password.toCharArray)
   }
 }

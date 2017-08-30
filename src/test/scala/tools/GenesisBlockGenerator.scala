@@ -25,13 +25,11 @@ object GenesisBlockGenerator extends App {
 
 
   def generateFullAddressInfo() = {
-    val seed = Array.fill(32)((scala.util.Random.nextInt(256)).toByte)
-    val acc = Wallet.generateNewAccount(seed, 0)
-    val privateKey = ByteStr(acc.privateKey)
+    val acc = Wallet.generateNewAccount()
     val publicKey = ByteStr(acc.publicKey)
     val address = acc.toAddress
 
-    (ByteStr(seed), ByteStr(acc.seed), privateKey, publicKey, address)
+    (publicKey, address)
   }
 
   def generate(networkByte: Char, accountsTotal: Int, baseTraget: Long, averageBlockDelay: FiniteDuration) = {

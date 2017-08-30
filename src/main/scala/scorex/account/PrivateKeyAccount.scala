@@ -1,19 +1,16 @@
 package scorex.account
 
-import scorex.crypto.EllipticCurveImpl
+import java.security.{PrivateKey, PublicKey}
 
 sealed trait PrivateKeyAccount extends PublicKeyAccount {
-  def seed: Array[Byte]
-
-  def privateKey: Array[Byte]
+  def privateKey: PrivateKey
 }
 
 object PrivateKeyAccount {
 
-  private case class PrivateKeyAccountImpl(seed: Array[Byte], privateKey: Array[Byte], publicKey: Array[Byte]) extends PrivateKeyAccount
+  private case class PrivateKeyAccountImpl(privateKey: PrivateKey, publicKey: PublicKey) extends PrivateKeyAccount
 
-  def apply(seed: Array[Byte]): PrivateKeyAccount = {
-    val pair = EllipticCurveImpl.createKeyPair(seed)
-    PrivateKeyAccountImpl(seed, pair._1, pair._2)
+  def apply(privateKey: PrivateKey, publicKey: PublicKey): PrivateKeyAccount = {
+    PrivateKeyAccountImpl(privateKey, publicKey)
   }
 }

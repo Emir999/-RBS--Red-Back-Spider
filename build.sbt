@@ -29,22 +29,23 @@ test in assembly := {}
 
 libraryDependencies ++=
   Dependencies.network ++
-  Dependencies.db ++
-  Dependencies.http ++
-  Dependencies.akka ++
-  Dependencies.serialization ++
-  Dependencies.testKit ++
-  Dependencies.itKit ++
-  Dependencies.logging ++
-  Dependencies.matcher ++
-  Seq(
-    "com.iheart" %% "ficus" % "1.4.1",
-    ("org.scorexfoundation" %% "scrypto" % "1.2.2")
-      .exclude("org.slf4j", "slf4j-api"),
-    "commons-net" % "commons-net" % "3.+",
-    "org.typelevel" %% "cats-core" % "0.9.0",
-    "io.monix" %% "monix" % "2.3.0"
-  )
+    Dependencies.db ++
+    Dependencies.http ++
+    Dependencies.akka ++
+    Dependencies.serialization ++
+    Dependencies.testKit ++
+    Dependencies.itKit ++
+    Dependencies.logging ++
+    Dependencies.matcher ++
+    Dependencies.kamon ++
+    Seq(
+      "com.iheart" %% "ficus" % "1.4.1",
+      ("org.scorexfoundation" %% "scrypto" % "1.2.2")
+        .exclude("org.slf4j", "slf4j-api"),
+      "commons-net" % "commons-net" % "3.+",
+      "org.typelevel" %% "cats-core" % "0.9.0",
+      "io.monix" %% "monix" % "2.3.0"
+    )
 
 sourceGenerators in Compile += Def.task {
   val versionFile = (sourceManaged in Compile).value / "com" / "wavesplatform" / "Version.scala"
@@ -52,12 +53,12 @@ sourceGenerators in Compile += Def.task {
   val versionExtractor(major, minor, bugfix) = version.value
   IO.write(versionFile,
     s"""package com.wavesplatform
-      |
+       |
       |object Version {
-      |  val VersionString = "${version.value}"
-      |  val VersionTuple = ($major, $minor, $bugfix)
-      |}
-      |""".stripMargin)
+       |  val VersionString = "${version.value}"
+       |  val VersionTuple = ($major, $minor, $bugfix)
+       |}
+       |""".stripMargin)
   Seq(versionFile)
 }
 
@@ -97,9 +98,9 @@ val network = SettingKey[Network]("network")
 
 commands += Command.command("packageAll") { state =>
   "clean" ::
-  "assembly" ::
-  "debian:packageBin" ::
-  state
+    "assembly" ::
+    "debian:packageBin" ::
+    state
 }
 
 inConfig(Linux)(Seq(
