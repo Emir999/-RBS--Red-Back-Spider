@@ -21,10 +21,12 @@ import com.wavesplatform.mining.{Miner, MinerImpl}
 import com.wavesplatform.network.{NetworkServer, PeerDatabaseImpl, PeerInfo, UPnP}
 import com.wavesplatform.settings._
 import com.wavesplatform.utils.forceStopApplication
+import com.zaxxer.hikari.{HikariConfig, HikariDataSource}
 import io.netty.channel.Channel
 import io.netty.channel.group.DefaultChannelGroup
 import io.netty.util.concurrent.GlobalEventExecutor
 import kamon.Kamon
+import org.flywaydb.core.Flyway
 import org.influxdb.dto.Point
 import org.slf4j.bridge.SLF4JBridgeHandler
 import scorex.account.AddressScheme
@@ -247,6 +249,16 @@ object Application extends ScorexLogging {
     val settings = WavesSettings.fromConfig(config)
     Kamon.start(config)
     val isMetricsStarted = Metrics.start(settings.metrics)
+
+    val hc = new HikariConfig()
+    hc.setDriverClassName("org.h2.Driver")
+    hc.setJdbcUrl(s"jdbc:h2:${settings.directory}/h2db/data")
+    hc.setUsername("sa")
+    hc.setPassword("sa")
+    val hds = new HikariDataSource(hc)
+    val flyway = new Flyway
+    flyway.setDataSource(hds)
+    flyway.migrate()
 
     log.trace(s"System property sun.net.inetaddr.ttl=${System.getProperty("sun.net.inetaddr.ttl")}")
     log.trace(s"System property sun.net.inetaddr.negative.ttl=${System.getProperty("sun.net.inetaddr.negative.ttl")}")
