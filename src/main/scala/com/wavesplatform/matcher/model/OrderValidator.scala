@@ -78,7 +78,7 @@ trait OrderValidator {
   private def spendableBalance(a: AssetAcc): Long = {
     val portfolio = utxPool.portfolio(a.account)
     a.assetId match {
-      case Some(x) => portfolio.assets.getOrElse(x, 0)
+      case Some(x) => ??? //portfolio.assets.getOrElse(x, 0)
       case None => portfolio.spendableBalance
     }
   }

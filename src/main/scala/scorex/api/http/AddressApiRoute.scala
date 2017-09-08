@@ -242,30 +242,26 @@ case class AddressApiRoute(settings: RestAPISettings, wallet: Wallet, state: Sta
     Address.fromString(address).right.map(acc => ToResponseMarshallable(Balance(
       acc.address,
       0,
-      state.balance(acc)
+      state.wavesBalance(Address.fromString(address).right.get).balance
     ))).getOrElse(InvalidAddress)
   }
 
   private def balancesDetailsJson(account: Address): BalanceDetails = {
-    state.read { _ =>
-      val portfolio = state.accountPortfolio(account)
+      val portfolio = state.wavesBalance(account)
       BalanceDetails(
         account.address,
         portfolio.balance,
         PoSCalc.generatingBalance(state, functionalitySettings, account, state.height).get,
         portfolio.balance - portfolio.leaseInfo.leaseOut,
-        state.effectiveBalance(account))
-    }
+        ???)
   }
 
   private def effectiveBalanceJson(address: String, confirmations: Int): ToResponseMarshallable = {
-    state.read { _ =>
       Address.fromString(address).right.map(acc => ToResponseMarshallable(Balance(
         acc.address,
         confirmations,
         state.effectiveBalanceAtHeightWithConfirmations(acc, state.height, confirmations).get)))
         .getOrElse(InvalidAddress)
-    }
   }
 
   private def signPath(address: String, encode: Boolean) = (post & entity(as[String])) { message =>

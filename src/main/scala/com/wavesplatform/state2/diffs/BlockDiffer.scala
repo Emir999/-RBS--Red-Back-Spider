@@ -87,11 +87,7 @@ object BlockDiffer extends ScorexLogging with Instrumented {
       else d
       val newSnapshots = diff.portfolios
         .collect { case (acc, portfolioDiff) if portfolioDiff.balance != 0 || portfolioDiff.effectiveBalance != 0 =>
-          val oldPortfolio = s.partialPortfolio(acc, Set.empty[ByteStr])
-          if (s.lastUpdateHeight(acc).contains(currentBlockHeight)) {
-            throw new Exception(s"CRITICAL: attempting to build a circular reference in snapshot list. " +
-              s"acc=$acc, currentBlockHeight=$currentBlockHeight")
-          }
+          val oldPortfolio = s.wavesBalance(acc)
           acc -> SortedMap(currentBlockHeight -> Snapshot(
             prevHeight = s.lastUpdateHeight(acc).getOrElse(0),
             balance = oldPortfolio.balance + portfolioDiff.balance,

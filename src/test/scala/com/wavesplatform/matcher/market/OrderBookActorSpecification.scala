@@ -12,8 +12,8 @@ import com.wavesplatform.matcher.market.OrderHistoryActor.{ValidateOrder, Valida
 import com.wavesplatform.matcher.model.Events.Event
 import com.wavesplatform.matcher.model.{BuyLimitOrder, LimitOrder, SellLimitOrder}
 import com.wavesplatform.settings.{Constants, FunctionalitySettings, WalletSettings}
+import com.wavesplatform.state2.ByteStr
 import com.wavesplatform.state2.reader.StateReader
-import com.wavesplatform.state2.{ByteStr, LeaseInfo, Portfolio}
 import io.netty.channel.group.ChannelGroup
 import org.h2.mvstore.MVStore
 import org.scalamock.scalatest.PathMockFactory
@@ -48,10 +48,10 @@ class OrderBookActorSpecification extends TestKit(ActorSystem("MatcherTest"))
   val db = new MVStore.Builder().compress().open()
   val storedState: StateReader = stub[StateReader]
   val hugeAmount = Long.MaxValue / 2
-  (storedState.accountPortfolio _).when(*).returns(Portfolio(hugeAmount, LeaseInfo.empty, Map(
-    ByteStr("BTC".getBytes) -> hugeAmount,
-    ByteStr("WAVES".getBytes) -> hugeAmount
-  )))
+//  (storedState.accountPortfolio _).when(*).returns(Portfolio(hugeAmount, LeaseInfo.empty, Map(
+//    ByteStr("BTC".getBytes) -> hugeAmount,
+//    ByteStr("WAVES".getBytes) -> hugeAmount
+//  )))
   val issueTransaction: IssueTransaction = IssueTransaction.create(
     PrivateKeyAccount("123".getBytes),
     "MinerReward".getBytes,

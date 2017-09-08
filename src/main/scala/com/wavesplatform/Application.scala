@@ -2,8 +2,10 @@ package com.wavesplatform
 
 import java.io.File
 import java.security.Security
+import java.util.Properties
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
+import javax.sql.DataSource
 
 import akka.actor.ActorSystem
 import akka.http.scaladsl.Http
@@ -46,10 +48,11 @@ import scala.concurrent.duration._
 import scala.reflect.runtime.universe._
 import scala.util.Try
 
-class Application(val actorSystem: ActorSystem, val settings: WavesSettings, configRoot: ConfigObject) extends ScorexLogging {
+class Application(val actorSystem: ActorSystem, val settings: WavesSettings, configRoot: ConfigObject, ds: DataSource) extends ScorexLogging {
 
   private val checkpointService = new CheckpointServiceImpl(settings.blockchainSettings.checkpointFile, settings.checkpointsSettings)
-  private val (history, featureProvider, stateWriter, stateReader, blockchainUpdater, blockchainDebugInfo) = StorageFactory(settings).get
+  private val (history, featureProvider, stateWriter, stateReader, blockchainUpdater, blockchainDebugInfo) =
+    StorageFactory(settings, ds).get
   private lazy val upnp = new UPnP(settings.networkSettings.uPnPSettings) // don't initialize unless enabled
   private val wallet: Wallet = Wallet(settings.walletSettings)
 
@@ -179,7 +182,6 @@ class Application(val actorSystem: ActorSystem, val settings: WavesSettings, con
         .failed.map(e => log.error("Failed to terminate actor system: " + e.getMessage))
       log.debug("Closing storage")
       wallet.close()
-      stateWriter.close()
       history.close()
       log.info("Shutdown complete")
     }
@@ -250,11 +252,14 @@ object Application extends ScorexLogging {
     Kamon.start(config)
     val isMetricsStarted = Metrics.start(settings.metrics)
 
+    val props = new Properties()
+    props.put("url", s"jdbc:h2:${settings.directory}/h2db")
     val hc = new HikariConfig()
-    hc.setDriverClassName("org.h2.Driver")
-    hc.setJdbcUrl(s"jdbc:h2:${settings.directory}/h2db/data")
+    hc.setDataSourceClassName("org.h2.jdbcx.JdbcDataSource")
+//    hc.setDriverClassName("org.h2.Driver")
     hc.setUsername("sa")
     hc.setPassword("sa")
+    hc.setDataSourceProperties(props)
     val hds = new HikariDataSource(hc)
     val flyway = new Flyway
     flyway.setDataSource(hds)
@@ -293,7 +298,7 @@ object Application extends ScorexLogging {
 
       log.info(s"${Constants.AgentName} Blockchain Id: ${settings.blockchainSettings.addressSchemeCharacter}")
 
-      new Application(actorSystem, settings, config.root()) {
+      new Application(actorSystem, settings, config.root(), hds) {
         override def shutdown(): Unit = {
           Kamon.shutdown()
           Metrics.shutdown()

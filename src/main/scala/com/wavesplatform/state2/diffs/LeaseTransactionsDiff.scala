@@ -20,7 +20,7 @@ object LeaseTransactionsDiff {
       if (recipient == sender)
         Left(GenericError("Cannot lease to self"))
       else {
-        val ap = s.partialPortfolio(tx.sender)
+        val ap = s.wavesBalance(tx.sender)
         if (ap.balance - ap.leaseInfo.leaseOut < tx.amount) {
           Left(GenericError(s"Cannot lease more than own: Balance:${ap.balance}, already leased: ${ap.leaseInfo.leaseOut}"))
         }

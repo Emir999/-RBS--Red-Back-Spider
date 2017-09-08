@@ -50,12 +50,12 @@ class BlockDifferTest extends FreeSpecLike with Matchers with BlockGen {
       "height < enableMicroblocksAfterHeight - a miner should receive 100% of the current block's fee" in {
         assertDiff(testChain.init, TestFunctionalitySettings.Enabled, 1000) { case (diff, s) =>
           diff.snapshots(signerA)(9).balance shouldBe 40
-          s.balance(signerA) shouldBe 40
+          s.wavesBalance(signerA).balance shouldBe 40
         }
 
         assertDiff(testChain, TestFunctionalitySettings.Enabled, 1000) { case (diff, s) =>
           diff.snapshots(signerB)(10).balance shouldBe 50
-          s.balance(signerB) shouldBe 50
+          s.wavesBalance(signerB).balance shouldBe 50
         }
       }
 
@@ -77,7 +77,7 @@ class BlockDifferTest extends FreeSpecLike with Matchers with BlockGen {
       "height = enableMicroblocksAfterHeight - a miner should receive 40% of the current block's fee only" in {
         assertDiff(testChain, TestFunctionalitySettings.Enabled, 9) { case (diff, s) =>
           diff.snapshots(signerB)(10).balance shouldBe 44
-          s.balance(signerB) shouldBe 44
+          s.wavesBalance(signerB).balance shouldBe 44
         }
       }
 
@@ -99,12 +99,12 @@ class BlockDifferTest extends FreeSpecLike with Matchers with BlockGen {
       "height > enableMicroblocksAfterHeight - a miner should receive 60% of previous block's fee and 40% of the current one" in {
         assertDiff(testChain.init, TestFunctionalitySettings.Enabled, 4) { case (diff, s) =>
           diff.snapshots(signerA)(9).balance shouldBe 34
-          s.balance(signerA) shouldBe 34
+          s.wavesBalance(signerA).balance shouldBe 34
         }
 
         assertDiff(testChain, TestFunctionalitySettings.Enabled, 4) { case (diff, s) =>
           diff.snapshots(signerB)(10).balance shouldBe 50
-          s.balance(signerB) shouldBe 50
+          s.wavesBalance(signerB).balance shouldBe 50
         }
       }
     }
@@ -131,11 +131,11 @@ class BlockDifferTest extends FreeSpecLike with Matchers with BlockGen {
     }
     zipWithPrev(preconditions).foreach { wp =>
       val preconditionDiff = differ(state, wp).explicitGet()
-      state.applyBlockDiff(preconditionDiff)
+      state.applyBlockDiff(preconditionDiff, ???, ???)
     }
 
     val totalDiff1 = differ(state, (preconditions.lastOption, block)).explicitGet()
-    state.applyBlockDiff(totalDiff1)
+    state.applyBlockDiff(totalDiff1, ???, ???)
     assertion(totalDiff1, state)
 
     val preconditionDiff = BlockDiffer.unsafeDiffMany(fs, fp, newState(), None)(preconditions)

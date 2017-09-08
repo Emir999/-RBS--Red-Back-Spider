@@ -37,7 +37,7 @@ class TransferTransactionDiffTest extends PropSpec with PropertyChecks with Gene
         totalPortfolioDiff.assets.values.foreach(_ shouldBe 0)
 
         val recipient: Address = transfer.recipient.asInstanceOf[Address]
-        val recipientPortfolio = newState.accountPortfolio(recipient)
+        val recipientPortfolio: Portfolio = ??? //newState.accountPortfolio(recipient)
         if (transfer.sender.toAddress != recipient) {
           transfer.assetId match {
             case Some(aid) => recipientPortfolio shouldBe Portfolio(0, LeaseInfo.empty, Map(aid -> transfer.amount))

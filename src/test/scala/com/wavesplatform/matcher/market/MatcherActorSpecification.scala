@@ -15,7 +15,7 @@ import com.wavesplatform.matcher.market.OrderHistoryActor.{ValidateOrder, Valida
 import com.wavesplatform.matcher.model.LevelAgg
 import com.wavesplatform.settings.WalletSettings
 import com.wavesplatform.state2.reader.StateReader
-import com.wavesplatform.state2.{AssetInfo, ByteStr, LeaseInfo, Portfolio}
+import com.wavesplatform.state2.{AssetInfo, ByteStr}
 import io.netty.channel.group.ChannelGroup
 import org.h2.mvstore.MVStore
 import org.scalamock.scalatest.PathMockFactory
@@ -61,7 +61,7 @@ class MatcherActorSpecification extends TestKit(ActorSystem.apply("MatcherTest2"
   val i2 = IssueTransaction.create(PrivateKeyAccount(Array.empty), "ForbiddenName".getBytes(), Array.empty, 10000000000L, 8.toByte, true, 100000L, 10000L).right.get
   (storedState.transactionInfo _).when(i2.id).returns(Some((1, i2)))
   (storedState.transactionInfo _).when(*).returns(Some((1, i1)))
-  (storedState.accountPortfolio _).when(*).returns(Portfolio(Long.MaxValue, LeaseInfo.empty, Map(ByteStr("123".getBytes) -> Long.MaxValue)))
+//  (storedState.accountPortfolio _).when(*).returns(Portfolio(Long.MaxValue, LeaseInfo.empty, Map(ByteStr("123".getBytes) -> Long.MaxValue)))
 
   override protected def beforeEach() = {
     val tp = TestProbe()

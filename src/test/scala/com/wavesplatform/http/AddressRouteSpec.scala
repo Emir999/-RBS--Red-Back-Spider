@@ -3,7 +3,6 @@ package com.wavesplatform.http
 import com.wavesplatform.TestWallet
 import com.wavesplatform.http.ApiMarshallers._
 import com.wavesplatform.state2.reader.StateReader
-import com.wavesplatform.state2.{LeaseInfo, Portfolio}
 import org.scalacheck.Gen
 import org.scalamock.scalatest.PathMockFactory
 import org.scalatest.prop.PropertyChecks
@@ -79,7 +78,7 @@ class AddressRouteSpec
 
   routePath("/balance/{address}") ignore {
     val state = stub[StateReader]
-    (state.accountPortfolio _).when(*).returns(Portfolio(0, mock[LeaseInfo], Map.empty))
+//    (state.accountPortfolio _).when(*).returns(Portfolio(0, mock[LeaseInfo], Map.empty))
     val route = AddressApiRoute(restAPISettings, testWallet, state, TestFunctionalitySettings.Stub).route
     Get(routePath(s"/balance/${allAddresses.head}")) ~> route ~> check {
       val r = responseAs[AddressApiRoute.Balance]

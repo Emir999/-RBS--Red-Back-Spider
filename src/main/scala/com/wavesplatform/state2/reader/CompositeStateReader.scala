@@ -1,7 +1,5 @@
 package com.wavesplatform.state2.reader
 
-import java.util.concurrent.locks.ReentrantReadWriteLock
-
 import cats.implicits._
 import cats.kernel.Monoid
 import com.wavesplatform.state2._
@@ -10,8 +8,6 @@ import scorex.transaction.Transaction
 import scorex.transaction.lease.LeaseTransaction
 
 class CompositeStateReader(inner: StateReader, blockDiff: BlockDiff) extends StateReader {
-
-  def synchronizationToken: ReentrantReadWriteLock = inner.synchronizationToken
 
   private val txDiff = blockDiff.txsDiff
 
@@ -68,10 +64,10 @@ class CompositeStateReader(inner: StateReader, blockDiff: BlockDiff) extends Sta
   override def filledVolumeAndFee(orderId: ByteStr): OrderFillInfo =
     blockDiff.txsDiff.orderFills.get(orderId).orEmpty.combine(inner.filledVolumeAndFee(orderId))
 
-  override def wavesBalance(a: Address): (Long, LeaseInfo) = {
+  override def wavesBalance(a: Address): WavesBalance = {
     val in = inner.partialPortfolio(a)
     val diffed = blockDiff.txsDiff.portfolios.get(a).orEmpty
-    (in.balance + diffed.balance, Monoid.combine(diffed.leaseInfo, in.leaseInfo))
+    WavesBalance(in.balance + diffed.balance, Monoid.combine(diffed.leaseInfo, in.leaseInfo))
   }
 
   override def assetBalance(a: Address, asset: ByteStr): Long = {
@@ -84,9 +80,6 @@ class CompositeStateReader(inner: StateReader, blockDiff: BlockDiff) extends Sta
 object CompositeStateReader {
 
   class Proxy(val inner: StateReader, blockDiff: () => BlockDiff) extends StateReader {
-
-    override def synchronizationToken: ReentrantReadWriteLock = inner.synchronizationToken
-
     override def paymentTransactionIdByHash(hash: ByteStr): Option[ByteStr] =
       new CompositeStateReader(inner, blockDiff()).paymentTransactionIdByHash(hash)
 
@@ -132,7 +125,7 @@ object CompositeStateReader {
     override def filledVolumeAndFee(orderId: ByteStr): OrderFillInfo =
       new CompositeStateReader(inner, blockDiff()).filledVolumeAndFee(orderId)
 
-    override def wavesBalance(a: Address): (Long, LeaseInfo) =
+    override def wavesBalance(a: Address): WavesBalance =
       new CompositeStateReader(inner, blockDiff()).wavesBalance(a)
 
     override def assetBalance(a: Address, asset: ByteStr): Long =

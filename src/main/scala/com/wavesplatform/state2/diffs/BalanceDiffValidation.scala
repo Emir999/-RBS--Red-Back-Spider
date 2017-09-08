@@ -19,9 +19,9 @@ object BalanceDiffValidation extends ScorexLogging with Instrumented {
     val changedAccounts = d.portfolios.keySet
 
     val positiveBalanceErrors: Map[Address, String] = changedAccounts.flatMap(acc => {
-
       val portfolioDiff = d.portfolios(acc)
-      val oldPortfolio = s.partialPortfolio(acc, portfolioDiff.assets.keySet)
+      val swb = s.wavesBalance(acc)
+      val oldPortfolio = Portfolio(swb.balance, swb.leaseInfo, portfolioDiff.assets.keys.map(aid => aid -> s.assetBalance(acc, aid)).toMap)
       val newPortfolio = oldPortfolio.combine(portfolioDiff)
 
       val err = if (newPortfolio.balance < 0) {

@@ -1,126 +1,164 @@
 package com.wavesplatform.state2
 
-import java.util.concurrent.locks.ReentrantReadWriteLock
+import javax.sql.DataSource
 
-import cats.Monoid
-import cats.implicits._
-import com.wavesplatform.metrics.Instrumented
-import com.wavesplatform.state2.reader.StateReaderImpl
-import scorex.utils.ScorexLogging
+import com.wavesplatform.state2.reader.StateReader
+import scalikejdbc._
+import scorex.account.{Address, Alias}
+import scorex.transaction.assets.IssueTransaction
+import scorex.transaction.lease.LeaseTransaction
+
 
 trait StateWriter {
-  def applyBlockDiff(blockDiff: BlockDiff): Unit
+  def applyBlockDiff(blockDiff: BlockDiff, blockBytes: Array[Byte], newHeight: Int): Unit
 
   def clear(): Unit
 }
 
-class StateWriterImpl(p: StateStorage, synchronizationToken: ReentrantReadWriteLock)
-  extends StateReaderImpl(p, synchronizationToken) with StateWriter with AutoCloseable with ScorexLogging with Instrumented {
+class StateWriterImpl(ds: DataSource) extends StateReader with StateWriter {
+  implicit def toParamBinder[A](v: A)(implicit ev: ParameterBinderFactory[A]): ParameterBinder = ev(v)
 
-  import StateStorage._
+  private def readOnly[A](f: DBSession => A): A = using(DB(ds.getConnection))(_.readOnly(f))
 
-  override def close(): Unit = p.close()
-
-  override def applyBlockDiff(blockDiff: BlockDiff): Unit = write { implicit l =>
-    val txsDiff = blockDiff.txsDiff
-
-    val oldHeight = sp().getHeight
-    val newHeight = oldHeight + blockDiff.heightDiff
-    log.debug(s"Starting persist from $oldHeight to $newHeight")
-
-    measureSizeLog("transactions")(txsDiff.transactions) {
-      _.par.foreach { case (id, (h, tx, _)) =>
-        sp().transactions.put(id, (h, tx.bytes))
-      }
-    }
-
-    measureSizeLog("orderFills")(blockDiff.txsDiff.orderFills) {
-      _.par.foreach { case (oid, orderFillInfo) =>
-        Option(sp().orderFills.get(oid)) match {
-          case Some(ll) =>
-            sp().orderFills.put(oid, (ll._1 + orderFillInfo.volume, ll._2 + orderFillInfo.fee))
-          case None =>
-            sp().orderFills.put(oid, (orderFillInfo.volume, orderFillInfo.fee))
-        }
-      }
-    }
-
-    measureSizeLog("portfolios")(txsDiff.portfolios) {
-      _.foreach { case (account, portfolioDiff) =>
-        val updatedPortfolio = this.partialPortfolio(account, portfolioDiff.assets.keySet).combine(portfolioDiff)
-        sp().wavesBalance.put(account.bytes, (updatedPortfolio.balance, updatedPortfolio.leaseInfo.leaseIn, updatedPortfolio.leaseInfo.leaseOut))
-        updatedPortfolio.assets.foreach { case (asset, amt) =>
-          sp().assetBalance.put(account.bytes, asset, amt)
-        }
-      }
-    }
-
-
-    measureSizeLog("assets")(txsDiff.issuedAssets) {
-      _.foreach { case (id, assetInfo) =>
-        val updated = (Option(sp().assets.get(id)) match {
-          case None => Monoid[AssetInfo].empty
-          case Some(existing) => AssetInfo(existing._1, existing._2)
-        }).combine(assetInfo)
-
-        sp().assets.put(id, (updated.isReissuable, updated.volume))
-      }
-    }
-
-    measureSizeLog("accountTransactionIds")(blockDiff.txsDiff.accountTransactionIds) {
-      _.foreach { case (acc, txIds) =>
-        val startIdxShift = sp().accountTransactionsLengths.getOrDefault(acc.bytes, 0)
-        txIds.reverse.foldLeft(startIdxShift) { case (shift, txId) =>
-          sp().accountTransactionIds.put(accountIndexKey(acc, shift), txId)
-          shift + 1
-        }
-        sp().accountTransactionsLengths.put(acc.bytes, startIdxShift + txIds.length)
-      }
-    }
-
-    measureSizeLog("paymentTransactionIdsByHashes")(blockDiff.txsDiff.paymentTransactionIdsByHashes) {
-      _.foreach { case (hash, id) =>
-        sp().paymentTransactionHashes.put(hash, id)
-      }
-    }
-
-    measureSizeLog("effectiveBalanceSnapshots")(blockDiff.snapshots)(
-      _.foreach { case (acc, snapshotsByHeight) =>
-        snapshotsByHeight.foreach { case (h, snapshot) =>
-          sp().balanceSnapshots.put(accountIndexKey(acc, h), (snapshot.prevHeight, snapshot.balance, snapshot.effectiveBalance))
-        }
-        sp().lastBalanceSnapshotHeight.put(acc.bytes, snapshotsByHeight.keys.max)
-      })
-
-    measureSizeLog("aliases")(blockDiff.txsDiff.aliases) {
-      _.foreach { case (alias, acc) =>
-        sp().aliasToAddress.put(alias.name, acc.bytes)
-      }
-    }
-
-    measureSizeLog("lease info")(blockDiff.txsDiff.leaseState)(
-      _.foreach { case (id, isActive) => sp().leaseState.put(id, isActive) })
-
-    sp().setHeight(newHeight)
-    sp().commit()
-
-    log.infoIf((newHeight / 10000) != (oldHeight / 10000), s"BlockDiff commit complete. Persisted height = $newHeight")
+  override def accountPortfolios = readOnly { implicit session =>
+    Map.empty[Address, Portfolio]
   }
 
-  override def clear(): Unit = write { implicit l =>
-    sp().transactions.clear()
-    sp().wavesBalance.clear()
-    sp().assetBalance.clear()
-    sp().assets.clear()
-    sp().accountTransactionIds.clear()
-    sp().accountTransactionsLengths.clear()
-    sp().balanceSnapshots.clear()
-    sp().paymentTransactionHashes.clear()
-    sp().orderFills.clear()
-    sp().aliasToAddress.clear()
-    sp().leaseState.clear()
-    sp().lastBalanceSnapshotHeight.clear()
-    sp().setHeight(0)
-    sp().commit()
+  override def accountPortfolio(a: Address) = ???
+
+  override def transactionInfo(id: ByteStr) = ???
+
+  override def containsTransaction(id: ByteStr) = using(DB(ds.getConnection)) { db =>
+    db.readOnly { implicit s =>
+      sql"select count(*) from transaction_offsets where tx_id = ?"
+        .bind(id.arr: ParameterBinder)
+        .map(_.get[Int](1))
+        .single()
+        .apply()
+        .isEmpty
+    }
+  }
+
+  override def wavesBalance(a: Address) = readOnly { implicit s =>
+    sql"""select top 1 wb.balance, wb.lease_in, wb.lease_out
+          from waves_balances wb
+          where wb.address = ?
+          order by height desc"""
+      .bind(a.bytes.arr: ParameterBinder)
+      .map { rs => WavesBalance(rs.get[Long](1), LeaseInfo(rs.get[Long](2), rs.get[Long](3))) }
+      .single()
+      .apply()
+      .getOrElse(WavesBalance(0, LeaseInfo.empty))
+  }
+
+  override def assetBalance(a: Address, assetId: ByteStr) = readOnly { implicit s =>
+    sql"select top 1 ab.balance from asset_balances ab where ab.address = ? and ab.asset_id = ? order by ab.height desc"
+      .bind(a.bytes.arr: ParameterBinder, assetId.arr: ParameterBinder)
+      .map(_.get[Long](1))
+      .single()
+      .apply()
+      .getOrElse(0L)
+  }
+
+  override def assetInfo(id: ByteStr) = ???
+
+  override def height = readOnly { implicit s =>
+    sql"select ifnull(max(height), 0) from blocks".map(_.get[Int](1)).single().apply().getOrElse(0)
+  }
+
+  override def accountTransactionIds(a: Address, limit: Int) = ???
+
+  override def paymentTransactionIdByHash(hash: ByteStr) = using(DB(ds.getConnection)) { db =>
+    db.readOnly { implicit s =>
+      sql"select top 1 * from payment_transactions where tx_hash = ?"
+        .bind(hash.arr)
+        .map(rs => ByteStr(rs.get[Array[Byte]](1)))
+        .single()
+        .apply()
+    }
+  }
+
+  override def aliasesOfAddress(a: Address) = ???
+
+  override def resolveAlias(a: Alias) = ???
+
+  override def isLeaseActive(leaseTx: LeaseTransaction) = ???
+
+  override def activeLeases() = ???
+
+  override def lastUpdateHeight(acc: Address) = using(DB(ds.getConnection)) { db =>
+    db.readOnly { implicit s =>
+      sql"select max(height) from waves_balances where address = ?"
+        .bind(acc.bytes.arr: ParameterBinder)
+        .map(_.get[Option[Int]](1)).single.apply().flatten
+    }
+  }
+
+  override def snapshotAtHeight(acc: Address, h: Int) = ???
+
+  override def filledVolumeAndFee(orderId: ByteStr) = ???
+
+  override def clear(): Unit = ???
+
+  override def applyBlockDiff(blockDiff: BlockDiff, blockBytes: Array[Byte], newHeight: Int): Unit = {
+    using(DB(ds.getConnection)) { db =>
+      db.localTx { implicit s =>
+
+        sql"insert into blocks (height, block_id, block_data_bytes) values (?, cast(0 as binary), cast(? as binary))"
+          .bind(newHeight, blockBytes: ParameterBinder)
+          .update()
+          .apply()
+
+//        sql"insert into transaction_offsets (tx_id, height, start_offset) values (?, ?, ?)"
+//          .batch(blockDiff.txsDiff.transactions.keys.map(k => Seq(k.arr: ParameterBinder, newHeight, 0)).toSeq: _*)
+//          .apply()
+
+        val issuedAssetParams = blockDiff.txsDiff.transactions.values.collect {
+          case (_, i: IssueTransaction, _) =>
+            Seq(i.assetId.arr: ParameterBinder, i.decimals, i.name: ParameterBinder, i.description: ParameterBinder, newHeight)
+        }
+
+        sql"insert into asset_info(asset_id, decimals, name, description, height) values (?,?,?,?,?)"
+          .batch(issuedAssetParams.toSeq: _*)
+          .apply()
+
+        sql"insert into asset_quantity(asset_id, quantity, reissuable, height) values (?,?,?,?)"
+          .batch(blockDiff.txsDiff.issuedAssets.map {
+            case (id, ai) => Seq(id.arr: ParameterBinder, ai.volume, ai.isReissuable, newHeight)
+          }.toSeq: _*)
+          .apply()
+
+        sql"""insert into filled_quantity
+             |with this_order as (select cast(? as binary) order_id)
+             |select this_order.order_id, ifnull(fq.filled_quantity, 0) + ?, ? from this_order
+             |left join filled_quantity fq on this_order.order_id = fq.order_id
+             |order by fq.height desc
+             |limit 1""".stripMargin
+          .batch((for {
+            (orderId, fillInfo) <- blockDiff.txsDiff.orderFills
+          } yield Seq(orderId.arr: ParameterBinder, fillInfo.volume, newHeight)).toSeq: _*)
+            .apply()
+
+        sql"""insert into asset_balances
+             |with this_balance as (select cast(? as binary) address, cast(? as binary) asset_id)
+             |select this_balance.address, this_balance.asset_id, ifnull(ab.balance, 0) + ?, ? from this_balance
+             |left join asset_balances ab on this_balance.address = ab.address and this_balance.asset_id = ab.asset_id
+             |order by ab.height desc
+             |limit 1""".stripMargin
+          .batch((for {
+            (address, p) <- blockDiff.txsDiff.portfolios
+            (assetId, balance) <- p.assets
+          } yield Seq(address.bytes.arr: ParameterBinder, assetId.arr: ParameterBinder, balance, newHeight)).toSeq: _*)
+          .apply()
+
+        sql"""insert into waves_balances (address, balance, lease_in, lease_out, height)
+             |values(?, ?, ?, ?, ?)""".stripMargin
+          .batch((for {
+            (address, s) <- blockDiff.snapshots
+            (_, ls) = s.last
+          } yield Seq(address.bytes.arr: ParameterBinder, ls.balance, 0, 0, newHeight)).toSeq: _*)
+          .apply()
+      }
+    }
   }
 }

@@ -6,7 +6,7 @@ import java.util.concurrent.TimeoutException
 import com.wavesplatform.features.api.ActivationStatus
 import com.wavesplatform.it.util._
 import com.wavesplatform.matcher.api.CancelOrderRequest
-import com.wavesplatform.state2.Portfolio
+import com.wavesplatform.state2.WavesBalance
 import io.netty.util.{HashedWheelTimer, Timer}
 import org.asynchttpclient.Dsl.{get => _get, post => _post}
 import org.asynchttpclient._
@@ -280,7 +280,7 @@ trait NodeApi {
 
   def debugPortfoliosFor(address: String, considerUnspent: Boolean) = {
     getWihApiKey(s"/debug/portfolios/$address?considerUnspent=$considerUnspent")
-  }.as[Portfolio]
+  }.as[WavesBalance]
 
 }
 
