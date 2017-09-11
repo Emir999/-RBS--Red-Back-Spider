@@ -37,14 +37,14 @@ object LeaseTransactionsDiff {
 
   def leaseCancel(s: StateReader, settings: FunctionalitySettings, time: Long, height: Int)
                  (tx: LeaseCancelTransaction): Either[ValidationError, Diff] = {
-    val leaseEi = s.findTransaction[LeaseTransaction](tx.leaseId) match {
+    val leaseEi = s.leaseInfo(tx.leaseId) match {
       case None => Left(GenericError(s"Related LeaseTransaction not found"))
       case Some(l) => Right(l)
     }
     for {
       lease <- leaseEi
       recipient <- s.resolveAliasEi(lease.recipient)
-      isLeaseActive = s.isLeaseActive(lease)
+      isLeaseActive = lease.isActive
       _ <- if (!isLeaseActive && time > settings.allowMultipleLeaseCancelTransactionUntilTimestamp)
         Left(GenericError(s"Cannot cancel already cancelled lease")) else Right(())
       canceller = Address.fromPublicKey(tx.sender.publicKey)
@@ -59,7 +59,7 @@ object LeaseTransactionsDiff {
       } else Left(GenericError(s"LeaseTransaction was leased by other sender " +
         s"and time=$time > allowMultipleLeaseCancelTransactionUntilTimestamp=${settings.allowMultipleLeaseCancelTransactionUntilTimestamp}"))
 
-    } yield Diff(height = height, tx = tx, portfolios = portfolioDiff, leaseState = Map(lease.id -> false))
+    } yield Diff(height = height, tx = tx, portfolios = portfolioDiff, leaseState = Map(tx.leaseId -> false))
   }
 }
 

@@ -5,7 +5,7 @@ import java.nio.ByteBuffer
 import cats._
 import com.google.common.primitives.{Bytes, Ints, Longs}
 import com.wavesplatform.settings.GenesisSettings
-import com.wavesplatform.state2.{ByteStr, LeaseInfo, Portfolio}
+import com.wavesplatform.state2.{ByteStr, Diff, LeaseInfo, Portfolio}
 import play.api.libs.json.{JsObject, Json}
 import scorex.account.{Address, PrivateKeyAccount, PublicKeyAccount}
 import scorex.block.fields.FeaturesBlockField
@@ -80,19 +80,15 @@ case class Block(timestamp: Long,
   lazy val blockScore: BigInt = (BigInt("18446744073709551616") / consensusData.baseTarget)
     .ensuring(_ > 0) // until we make smart-constructor validate consensusData.baseTarget to be positive
 
-  lazy val feesPortfolio: Portfolio = Monoid[Portfolio].combineAll({
-    val assetFees: Seq[(Option[AssetId], Long)] = transactionData.map(_.assetFee)
-    assetFees
-      .map { case (maybeAssetId, vol) => maybeAssetId -> vol }
-      .groupBy(a => a._1)
-      .mapValues((records: Seq[(Option[ByteStr], Long)]) => records.map(_._2).sum)
-  }.toList.map {
-    case (maybeAssetId, feeVolume) =>
-      maybeAssetId match {
-        case None => Portfolio(feeVolume, LeaseInfo.empty, Map.empty)
-        case Some(assetId) => Portfolio(0L, LeaseInfo.empty, Map(assetId -> feeVolume))
+  lazy val feesDistribution: Portfolio = transactionData.foldLeft(Monoid[Portfolio].empty) {
+    case (d, tx) =>
+      val (feeAsset, feeAmount) = tx.assetFee
+      val newPortfolio = feeAsset match {
+        case Some(feeAssetId) => Portfolio(0, LeaseInfo.empty, Map(feeAssetId -> feeAmount))
+        case None => Portfolio(feeAmount, LeaseInfo.empty, Map.empty)
       }
-  })
+      Monoid.combine(d, newPortfolio)
+  }
 
   lazy val prevBlockFeePart: Portfolio = Monoid[Portfolio].combineAll(transactionData.map(tx => tx.feeDiff().minus(tx.feeDiff().multiply(CurrentBlockFeePart))))
 

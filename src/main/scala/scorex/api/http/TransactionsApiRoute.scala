@@ -11,7 +11,7 @@ import com.wavesplatform.state2.reader.StateReader
 import io.swagger.annotations._
 import play.api.libs.json._
 import scorex.account.Address
-import scorex.transaction.lease.{LeaseCancelTransaction, LeaseTransaction}
+import scorex.transaction.lease.LeaseCancelTransaction
 import scorex.transaction.{History, Transaction}
 
 import scala.util.Success
@@ -128,7 +128,7 @@ case class TransactionsApiRoute(
   private def txToExtendedJson(tx: Transaction): JsObject = {
     tx match {
       case leaseCancel: LeaseCancelTransaction =>
-        leaseCancel.json ++ Json.obj("lease" -> state.findTransaction[LeaseTransaction](leaseCancel.leaseId).map(_.json).getOrElse[JsValue](JsNull))
+        leaseCancel.json ++ Json.obj("lease" -> state.transactionInfo(leaseCancel.leaseId).map(_._2.json).getOrElse[JsValue](JsNull))
       case t => t.json
     }
   }

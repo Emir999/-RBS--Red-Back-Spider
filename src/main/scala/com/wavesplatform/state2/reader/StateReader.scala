@@ -1,15 +1,12 @@
 package com.wavesplatform.state2.reader
 
-import com.google.common.base.Charsets
 import com.wavesplatform.state2._
 import scorex.account.{Address, AddressOrAlias, Alias}
 import scorex.transaction.ValidationError.AliasNotExists
 import scorex.transaction._
 import scorex.transaction.assets.IssueTransaction
-import scorex.transaction.lease.LeaseTransaction
 import scorex.utils.ScorexLogging
 
-import scala.reflect.ClassTag
 import scala.util.{Right, Try}
 
 trait StateReader {
@@ -21,6 +18,8 @@ trait StateReader {
   def containsTransaction(id: ByteStr): Boolean
 
   def accountPortfolio(a: Address): Portfolio
+
+  def assetDescription(id: ByteStr): Option[AssetDescription]
 
   def assetInfo(id: ByteStr): Option[AssetInfo]
 
@@ -38,7 +37,7 @@ trait StateReader {
 
   def resolveAlias(a: Alias): Option[Address]
 
-  def isLeaseActive(leaseTx: LeaseTransaction): Boolean
+  def leaseInfo(leaseId: ByteStr): Option[LeaseInfo]
 
   def activeLeases(): Seq[ByteStr]
 
@@ -53,14 +52,6 @@ object StateReader {
 
   implicit class StateReaderExt(s: StateReader) extends ScorexLogging {
     def assetDistribution(assetId: ByteStr): Map[Address, Long] = ???
-
-    def findTransaction[T <: Transaction](signature: ByteStr)(implicit ct: ClassTag[T]): Option[T]
-    = s.transactionInfo(signature).map(_._2)
-      .flatMap(tx => {
-        if (ct.runtimeClass.isAssignableFrom(tx.getClass))
-          Some(tx.asInstanceOf[T])
-        else None
-      })
 
     def resolveAliasEi[T <: Transaction](aoa: AddressOrAlias): Either[ValidationError, Address] = {
       aoa match {
@@ -87,20 +78,6 @@ object StateReader {
 
     def totalAssetQuantity(assetId: AssetId): Long =
       s.assetInfo(assetId).get.volume
-
-    def assetExists(assetId: AssetId): Boolean = {
-      s.findTransaction[IssueTransaction](assetId).nonEmpty
-    }
-
-    def getAssetName(assetId: AssetId): String = {
-      s.findTransaction[IssueTransaction](assetId)
-        .map(tx => new String(tx.name, Charsets.UTF_8))
-        .getOrElse("Unknown")
-    }
-
-    def getIssueTransaction(assetId: AssetId): Option[IssueTransaction] = {
-      s.findTransaction[IssueTransaction](assetId)
-    }
 
     private def minBySnapshot(acc: Address, atHeight: Int, confirmations: Int)(extractor: Snapshot => Long): Long = ???
 

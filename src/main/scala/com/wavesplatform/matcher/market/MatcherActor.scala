@@ -3,6 +3,7 @@ package com.wavesplatform.matcher.market
 import akka.actor.{ActorRef, Props}
 import akka.http.scaladsl.model.{StatusCode, StatusCodes}
 import akka.persistence.{PersistentActor, RecoveryCompleted}
+import com.google.common.base.Charsets
 import com.wavesplatform.UtxPool
 import com.wavesplatform.matcher.MatcherSettings
 import com.wavesplatform.matcher.api.{MatcherResponse, StatusCodeMatcherResponse}
@@ -30,14 +31,15 @@ class MatcherActor(orderHistory: ActorRef, storedState: StateReader, wallet: Wal
   val tradedPairs = mutable.Map.empty[AssetPair, MarketData]
 
   def getAssetName(asset: Option[AssetId]): String =
-    asset.map(storedState.getAssetName).getOrElse(AssetPair.WavesName)
+    asset.fold(AssetPair.WavesName) { aid =>
+      // fixme: the following line will throw an exception when asset name bytes are not a valid UTF-8
+      storedState.assetDescription(aid).fold("Unknown")(d => new String(d.name, Charsets.UTF_8))
+    }
 
   def createOrderBook(pair: AssetPair): ActorRef = {
-    def getAssetName(asset: Option[AssetId]): String = asset.map(storedState.getAssetName).getOrElse(AssetPair.WavesName)
-
     val md = MarketData(pair, getAssetName(pair.amountAsset), getAssetName(pair.priceAsset), NTP.correctedTime(),
-      pair.amountAsset.flatMap(storedState.getIssueTransaction).map(t => AssetInfo(t.decimals)),
-      pair.priceAsset.flatMap(storedState.getIssueTransaction).map(t => AssetInfo(t.decimals)))
+      pair.amountAsset.flatMap(storedState.assetDescription).map(t => AssetInfo(t.decimals)),
+      pair.priceAsset.flatMap(storedState.assetDescription).map(t => AssetInfo(t.decimals)))
     tradedPairs += pair -> md
 
     context.actorOf(OrderBookActor.props(pair, orderHistory, storedState, settings, wallet, utx, allChannels, history, functionalitySettings),
@@ -46,9 +48,9 @@ class MatcherActor(orderHistory: ActorRef, storedState: StateReader, wallet: Wal
 
   def basicValidation(msg: {def assetPair: AssetPair}): Validation = {
     def isAssetsExist: Validation = {
-      msg.assetPair.priceAsset.forall(storedState.assetExists(_)) :|
+      msg.assetPair.priceAsset.forall(storedState.assetDescription(_).isDefined) :|
         s"Unknown Asset ID: ${msg.assetPair.priceAssetStr}" &&
-        msg.assetPair.amountAsset.forall(storedState.assetExists(_)) :|
+        msg.assetPair.amountAsset.forall(storedState.assetDescription(_).isDefined) :|
           s"Unknown Asset ID: ${msg.assetPair.amountAssetStr}"
     }
 

@@ -2,7 +2,7 @@ package com.wavesplatform.state2.diffs
 
 import com.wavesplatform.settings.FunctionalitySettings
 import com.wavesplatform.state2.reader.StateReader
-import com.wavesplatform.state2.{AssetInfo, Diff, LeaseInfo, Portfolio}
+import com.wavesplatform.state2.{AssetDescription, AssetInfo, Diff, LeaseInfo, Portfolio}
 import scorex.transaction.ValidationError.GenericError
 import scorex.transaction.assets.{BurnTransaction, IssueTransaction, ReissueTransaction}
 import scorex.transaction.{AssetId, SignedTransaction, ValidationError}
@@ -56,10 +56,10 @@ object AssetTransactionsDiff {
     })
   }
 
-  private def findReferencedAsset(tx: SignedTransaction, state: StateReader, assetId: AssetId): Either[ValidationError, IssueTransaction] = {
-    state.findTransaction[IssueTransaction](assetId) match {
+  private def findReferencedAsset(tx: SignedTransaction, state: StateReader, assetId: AssetId): Either[ValidationError, AssetDescription] = {
+    state.assetDescription(assetId) match {
       case None => Left(GenericError("Referenced assetId not found"))
-      case Some(itx) if !(itx.sender equals tx.sender) => Left(GenericError("Asset was issued by other address"))
+      case Some(ad) if !(ad.issuer equals tx.sender) => Left(GenericError("Asset was issued by other address"))
       case Some(itx) => Right(itx)
     }
   }

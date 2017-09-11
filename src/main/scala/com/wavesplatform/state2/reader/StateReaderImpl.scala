@@ -3,12 +3,12 @@ package com.wavesplatform.state2.reader
 import cats.implicits._
 import com.wavesplatform.state2._
 import scorex.account.{Address, Alias}
-import scorex.transaction.lease.LeaseTransaction
 import scorex.transaction.{Transaction, TransactionParser}
 
 import scala.collection.JavaConverters._
 
 class StateReaderImpl(p: StateStorage) extends StateReader {
+  override def leaseInfo(leaseId: ByteStr) = ???
 
   override def transactionInfo(id: ByteStr): Option[(Int, Transaction)] = {
     Option(p.transactions.get(id)).map {
@@ -19,6 +19,8 @@ class StateReaderImpl(p: StateStorage) extends StateReader {
   override def accountPortfolio(a: Address): Portfolio = ???
 
   override def assetInfo(id: ByteStr): Option[AssetInfo] = ???
+
+  override def assetDescription(id: ByteStr) = ???
 
   override def height: Int = { p.getHeight }
 
@@ -46,10 +48,6 @@ class StateReaderImpl(p: StateStorage) extends StateReader {
   }
 
   override def accountPortfolios: Map[Address, Portfolio] = ???
-
-  override def isLeaseActive(leaseTx: LeaseTransaction): Boolean = {
-    p.leaseState.getOrDefault(leaseTx.id, false)
-  }
 
   override def activeLeases(): Seq[ByteStr] = {
     p.leaseState

@@ -5,11 +5,25 @@ import cats.kernel.Monoid
 import com.wavesplatform.state2._
 import scorex.account.{Address, Alias}
 import scorex.transaction.Transaction
-import scorex.transaction.lease.LeaseTransaction
+import scorex.transaction.assets.IssueTransaction
 
 class CompositeStateReader(inner: StateReader, blockDiff: BlockDiff) extends StateReader {
 
   private val txDiff = blockDiff.txsDiff
+
+  override def assetDescription(id: ByteStr) = {
+    val issueInThisBlock = txDiff.transactions.values.collectFirst {
+      case (_, tx: IssueTransaction, _) if tx.id == id =>
+        val ai = blockDiff.txsDiff.issuedAssets.getOrElse(tx.id, AssetInfo(tx.reissuable, tx.quantity))
+        AssetDescription(tx.sender, tx.name, tx.description, tx.decimals, ai)
+    }
+
+    val reissueInThisBlock = txDiff.issuedAssets.getOrElse(id, Monoid.empty[AssetInfo])
+
+    issueInThisBlock orElse inner.assetDescription(id).map(d => d.copy(info = d.info.combine(reissueInThisBlock)))
+  }
+
+  override def leaseInfo(leaseId: ByteStr) = ???
 
   override def transactionInfo(id: ByteStr): Option[(Int, Transaction)] =
     txDiff.transactions.get(id)
@@ -49,9 +63,6 @@ class CompositeStateReader(inner: StateReader, blockDiff: BlockDiff) extends Sta
   override def resolveAlias(a: Alias): Option[Address] = txDiff.aliases.get(a).orElse(inner.resolveAlias(a))
 
   override def accountPortfolios: Map[Address, Portfolio] = Monoid.combine(inner.accountPortfolios, txDiff.portfolios)
-
-  override def isLeaseActive(leaseTx: LeaseTransaction): Boolean =
-    blockDiff.txsDiff.leaseState.getOrElse(leaseTx.id, inner.isLeaseActive(leaseTx))
 
   override def activeLeases(): Seq[ByteStr] = {
     blockDiff.txsDiff.leaseState.collect { case (id, isActive) if isActive => id }.toSeq ++ inner.activeLeases()
@@ -106,9 +117,6 @@ object CompositeStateReader {
 
     override def height: Int =
       new CompositeStateReader(inner, blockDiff()).height
-
-    override def isLeaseActive(leaseTx: LeaseTransaction): Boolean =
-      new CompositeStateReader(inner, blockDiff()).isLeaseActive(leaseTx)
 
     override def activeLeases(): Seq[ByteStr] =
       new CompositeStateReader(inner, blockDiff()).activeLeases()

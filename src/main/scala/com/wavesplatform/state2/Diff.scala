@@ -2,7 +2,7 @@ package com.wavesplatform.state2
 
 import cats.Monoid
 import cats.implicits._
-import scorex.account.{Address, Alias}
+import scorex.account.{Address, Alias, PublicKeyAccount}
 import scorex.transaction.Transaction
 
 case class Snapshot(prevHeight: Int, balance: Long, effectiveBalance: Long)
@@ -27,6 +27,8 @@ object OrderFillInfo {
     override def combine(x: OrderFillInfo, y: OrderFillInfo): OrderFillInfo = OrderFillInfo(x.volume + y.volume, x.fee + y.fee)
   }
 }
+
+case class AssetDescription(issuer: PublicKeyAccount, name: Array[Byte], description: Array[Byte], decimals: Int, info: AssetInfo)
 
 case class AssetInfo(isReissuable: Boolean, volume: Long)
 

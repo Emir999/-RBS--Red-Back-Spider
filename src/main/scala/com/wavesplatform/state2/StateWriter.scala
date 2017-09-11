@@ -4,9 +4,8 @@ import javax.sql.DataSource
 
 import com.wavesplatform.state2.reader.StateReader
 import scalikejdbc._
-import scorex.account.{Address, Alias}
+import scorex.account.{Address, Alias, PublicKeyAccount}
 import scorex.transaction.assets.IssueTransaction
-import scorex.transaction.lease.LeaseTransaction
 
 
 trait StateWriter {
@@ -41,9 +40,9 @@ class StateWriterImpl(ds: DataSource) extends StateReader with StateWriter {
 
   override def wavesBalance(a: Address) = readOnly { implicit s =>
     sql"""select top 1 wb.balance, wb.lease_in, wb.lease_out
-          from waves_balances wb
-          where wb.address = ?
-          order by height desc"""
+         |from waves_balances wb
+         |where wb.address = ?
+         |order by height desc""".stripMargin
       .bind(a.bytes.arr: ParameterBinder)
       .map { rs => WavesBalance(rs.get[Long](1), LeaseInfo(rs.get[Long](2), rs.get[Long](3))) }
       .single()
@@ -60,7 +59,30 @@ class StateWriterImpl(ds: DataSource) extends StateReader with StateWriter {
       .getOrElse(0L)
   }
 
-  override def assetInfo(id: ByteStr) = ???
+  override def assetInfo(id: ByteStr) = readOnly { implicit s =>
+    sql"select top 1 reissuable, quantity from asset_quantity where asset_id = ? order by height desc"
+      .bind(id.arr: ParameterBinder)
+      .map { rs => AssetInfo(rs.get[Boolean](1), rs.get[Long](2)) }
+      .single()
+      .apply()
+  }
+
+  override def assetDescription(id: ByteStr) = readOnly { implicit s =>
+    sql"""select top 1 ai.issuer, ai.name, ai.description, ai.decimals, aq.reissuable, aq.quantity
+         |from asset_info ai, asset_quantity aq
+         |where ai.asset_id = aq.asset_id
+         |and ai.asset_id = ?
+         |order by aq.height desc""".stripMargin
+      .bind(id.arr: ParameterBinder)
+      .map { rs => AssetDescription(
+        PublicKeyAccount(rs.get[Array[Byte]](1)),
+        rs.get[Array[Byte]](2),
+        rs.get[Array[Byte]](3),
+        rs.get[Int](4),
+        AssetInfo(rs.get[Boolean](5), rs.get[Long](6))) }
+      .single()
+      .apply()
+  }
 
   override def height = readOnly { implicit s =>
     sql"select ifnull(max(height), 0) from blocks".map(_.get[Int](1)).single().apply().getOrElse(0)
@@ -82,16 +104,14 @@ class StateWriterImpl(ds: DataSource) extends StateReader with StateWriter {
 
   override def resolveAlias(a: Alias) = ???
 
-  override def isLeaseActive(leaseTx: LeaseTransaction) = ???
-
   override def activeLeases() = ???
 
-  override def lastUpdateHeight(acc: Address) = using(DB(ds.getConnection)) { db =>
-    db.readOnly { implicit s =>
-      sql"select max(height) from waves_balances where address = ?"
-        .bind(acc.bytes.arr: ParameterBinder)
-        .map(_.get[Option[Int]](1)).single.apply().flatten
-    }
+  override def leaseInfo(leaseId: ByteStr) = ???
+
+  override def lastUpdateHeight(acc: Address) = readOnly { implicit s =>
+    sql"select top 1 height from waves_balances where address = ? order by height desc"
+      .bind(acc.bytes.arr: ParameterBinder)
+      .map(_.get[Option[Int]](1)).single.apply().flatten
   }
 
   override def snapshotAtHeight(acc: Address, h: Int) = ???
@@ -115,11 +135,12 @@ class StateWriterImpl(ds: DataSource) extends StateReader with StateWriter {
 
         val issuedAssetParams = blockDiff.txsDiff.transactions.values.collect {
           case (_, i: IssueTransaction, _) =>
-            Seq(i.assetId.arr: ParameterBinder, i.decimals, i.name: ParameterBinder, i.description: ParameterBinder, newHeight)
-        }
+            Seq(i.assetId.arr: ParameterBinder, i.sender.publicKey: ParameterBinder, i.decimals,
+              i.name: ParameterBinder, i.description: ParameterBinder, newHeight): Seq[Any]
+        }.toSeq
 
-        sql"insert into asset_info(asset_id, decimals, name, description, height) values (?,?,?,?,?)"
-          .batch(issuedAssetParams.toSeq: _*)
+        sql"insert into asset_info(asset_id, issuer, decimals, name, description, height) values (?,?,?,?,?,?)"
+          .batch(issuedAssetParams: _*)
           .apply()
 
         sql"insert into asset_quantity(asset_id, quantity, reissuable, height) values (?,?,?,?)"
