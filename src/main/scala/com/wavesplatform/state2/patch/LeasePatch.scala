@@ -8,9 +8,9 @@ object LeasePatch {
 
     def invertLeaseInfo(l: LeaseInfo): LeaseInfo = LeaseInfo(-l.leaseIn, -l.leaseOut )
 
-    val portfolioUpd = s.accountPortfolios
-      .collect { case (acc, pf) if pf.leaseInfo != LeaseInfo.empty =>
-        acc -> Portfolio(0, invertLeaseInfo(pf.leaseInfo), Map.empty)
+    val portfolioUpd = s.nonZeroLeaseBalances
+      .collect { case (acc, pf) if pf != LeaseInfo.empty =>
+        acc -> Portfolio(0, invertLeaseInfo(pf), Map.empty)
       }
 
     Diff(transactions = Map.empty,
@@ -19,7 +19,7 @@ object LeasePatch {
       aliases = Map.empty,
       paymentTransactionIdsByHashes = Map.empty,
       orderFills = Map.empty,
-      leaseState = s.activeLeases().map(_ -> false).toMap)
+      leaseState = s.activeLeases.map(_ -> false).toMap)
   }
 
 }

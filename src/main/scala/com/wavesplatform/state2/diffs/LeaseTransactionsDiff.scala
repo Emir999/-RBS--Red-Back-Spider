@@ -21,8 +21,9 @@ object LeaseTransactionsDiff {
         Left(GenericError("Cannot lease to self"))
       else {
         val ap = s.wavesBalance(tx.sender)
-        if (ap.balance - ap.leaseInfo.leaseOut < tx.amount) {
-          Left(GenericError(s"Cannot lease more than own: Balance:${ap.balance}, already leased: ${ap.leaseInfo.leaseOut}"))
+        val li = s.leaseInfo(tx.sender)
+        if (ap.regularBalance - li.leaseOut < tx.amount) {
+          Left(GenericError(s"Cannot lease more than own: Balance:${ap.regularBalance}, already leased: ${li.leaseOut}"))
         }
         else {
           val portfolioDiff: Map[Address, Portfolio] = Map(
@@ -37,7 +38,7 @@ object LeaseTransactionsDiff {
 
   def leaseCancel(s: StateReader, settings: FunctionalitySettings, time: Long, height: Int)
                  (tx: LeaseCancelTransaction): Either[ValidationError, Diff] = {
-    val leaseEi = s.leaseInfo(tx.leaseId) match {
+    val leaseEi = s.leaseDetails(tx.leaseId) match {
       case None => Left(GenericError(s"Related LeaseTransaction not found"))
       case Some(l) => Right(l)
     }

@@ -22,9 +22,9 @@ object CommonValidation {
   def disallowSendingGreaterThanBalance[T <: Transaction](s: StateReader, settings: FunctionalitySettings, blockTime: Long, tx: T): Either[ValidationError, T] =
     if (blockTime >= settings.allowTemporaryNegativeUntil)
       tx match {
-        case ptx: PaymentTransaction if s.wavesBalance(ptx.sender).balance < (ptx.amount + ptx.fee) =>
+        case ptx: PaymentTransaction if s.wavesBalance(ptx.sender).regularBalance < (ptx.amount + ptx.fee) =>
           Left(GenericError(s"Attempt to pay unavailable funds: balance " +
-            s"${s.wavesBalance(ptx.sender).balance} is less than ${ptx.amount + ptx.fee}"))
+            s"${s.wavesBalance(ptx.sender).regularBalance} is less than ${ptx.amount + ptx.fee}"))
         case ttx: TransferTransaction =>
           val sender: Address = ttx.sender
 
@@ -40,19 +40,20 @@ object CommonValidation {
           val spendings = Monoid.combine(amountDiff, feeDiff)
           val accountPortfolio = s.wavesBalance(sender)
 
-          val preSpendingBalances = spendings.assets.keys.map(aid => aid -> s.assetBalance(sender, aid)).toMap
+//          val preSpendingBalances = spendings.assets.keys.map(aid => aid -> s.assetBalance(sender, aid)).toMap
 
-          lazy val negativeAsset = spendings
-            .assets
-            .find { case (id, amt) => (preSpendingBalances(id) + amt) < 0L }
-            .map { case (id, amt) =>
-              (id, preSpendingBalances(id), amt, preSpendingBalances(id) + amt)
-            }
-          lazy val newWavesBalance = accountPortfolio.balance + spendings.balance
+          lazy val negativeAsset = Option.empty[(Int, Int, Int, Int)]
+//            spendings
+//            .assets
+//            .find { case (id, amt) => (preSpendingBalances(id) + amt) < 0L }
+//            .map { case (id, amt) =>
+//              (id, preSpendingBalances(id), amt, preSpendingBalances(id) + amt)
+//            }
+          lazy val newWavesBalance = accountPortfolio.regularBalance + spendings.balance
           lazy val negativeWaves = newWavesBalance < 0
           if (negativeWaves)
             Left(GenericError(s"Attempt to transfer unavailable funds:" +
-              s" Transaction application leads to negative waves balance to (at least) temporary negative state, current balance equals ${accountPortfolio.balance}, spends equals ${spendings.balance}, result is $newWavesBalance"))
+              s" Transaction application leads to negative waves balance to (at least) temporary negative state, current balance equals ${accountPortfolio.regularBalance}, spends equals ${spendings.balance}, result is $newWavesBalance"))
           else if (negativeAsset.nonEmpty)
             Left(GenericError(s"Attempt to transfer unavailable funds:" +
               s" Transaction application leads to negative asset '${negativeAsset.get._1}' balance to (at least) temporary negative state, current balance is ${negativeAsset.get._2}, spends equals ${negativeAsset.get._3}, result is ${negativeAsset.get._4}"))

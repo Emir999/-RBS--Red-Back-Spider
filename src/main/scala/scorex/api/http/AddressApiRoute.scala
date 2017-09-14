@@ -242,7 +242,7 @@ case class AddressApiRoute(settings: RestAPISettings, wallet: Wallet, state: Sta
     Address.fromString(address).right.map(acc => ToResponseMarshallable(Balance(
       acc.address,
       0,
-      state.wavesBalance(Address.fromString(address).right.get).balance
+      state.wavesBalance(Address.fromString(address).right.get).regularBalance
     ))).getOrElse(InvalidAddress)
   }
 
@@ -250,9 +250,9 @@ case class AddressApiRoute(settings: RestAPISettings, wallet: Wallet, state: Sta
       val portfolio = state.wavesBalance(account)
       BalanceDetails(
         account.address,
-        portfolio.balance,
-        PoSCalc.generatingBalance(state, functionalitySettings, account, state.height).get,
-        portfolio.balance - portfolio.leaseInfo.leaseOut,
+        portfolio.regularBalance,
+        PoSCalc.generatingBalance(state, functionalitySettings, account, state.height),
+        ???,
         ???)
   }
 
@@ -260,7 +260,7 @@ case class AddressApiRoute(settings: RestAPISettings, wallet: Wallet, state: Sta
       Address.fromString(address).right.map(acc => ToResponseMarshallable(Balance(
         acc.address,
         confirmations,
-        state.effectiveBalanceAtHeightWithConfirmations(acc, state.height, confirmations).get)))
+        state.effectiveBalanceAtHeightWithConfirmations(acc, state.height, confirmations))))
         .getOrElse(InvalidAddress)
   }
 

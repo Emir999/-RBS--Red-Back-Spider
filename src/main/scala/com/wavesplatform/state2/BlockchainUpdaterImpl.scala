@@ -278,7 +278,7 @@ class BlockchainUpdaterImpl private(persisted: StateWriter with StateReader,
     )
   }
 
-  override def persistedAccountPortfoliosHash(): Int = Hash.accountPortfolios(currentPersistedBlocksState.accountPortfolios)
+  override def persistedAccountPortfoliosHash(): Int = 0
 
   override def topDiff(): Map[Address, Portfolio] = read { implicit l =>
     topMemoryDiff().txsDiff.portfolios

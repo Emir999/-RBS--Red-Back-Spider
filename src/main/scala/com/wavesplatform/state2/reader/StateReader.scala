@@ -7,12 +7,9 @@ import scorex.transaction._
 import scorex.transaction.assets.IssueTransaction
 import scorex.utils.ScorexLogging
 
-import scala.util.{Right, Try}
+import scala.util.Right
 
 trait StateReader {
-
-  def accountPortfolios: Map[Address, Portfolio]
-
   def transactionInfo(id: ByteStr): Option[(Int, Transaction)]
 
   def containsTransaction(id: ByteStr): Boolean
@@ -25,7 +22,9 @@ trait StateReader {
 
   def wavesBalance(a: Address): WavesBalance
 
-  def assetBalance(a: Address, asset: ByteStr): Long
+  def assetBalance(a: Address): Map[ByteStr, Long]
+
+  def nonZeroLeaseBalances: Map[Address, LeaseInfo]
 
   def height: Int
 
@@ -37,9 +36,10 @@ trait StateReader {
 
   def resolveAlias(a: Alias): Option[Address]
 
-  def leaseInfo(leaseId: ByteStr): Option[LeaseInfo]
+  def leaseDetails(leaseId: ByteStr): Option[LeaseDetails]
+  def leaseInfo(a: Address): LeaseInfo
 
-  def activeLeases(): Seq[ByteStr]
+  def activeLeases: Seq[ByteStr]
 
   def lastUpdateHeight(acc: Address): Option[Int]
 
@@ -79,25 +79,13 @@ object StateReader {
     def totalAssetQuantity(assetId: AssetId): Long =
       s.assetInfo(assetId).get.volume
 
-    private def minBySnapshot(acc: Address, atHeight: Int, confirmations: Int)(extractor: Snapshot => Long): Long = ???
+    def effectiveBalanceAtHeightWithConfirmations(acc: Address, atHeight: Int, confirmations: Int): Long = ???
 
-    def effectiveBalanceAtHeightWithConfirmations(acc: Address, atHeight: Int, confirmations: Int): Try[Long] = Try {
-      minBySnapshot(acc, atHeight, confirmations)(_.effectiveBalance)
-    }
-
-    def balanceWithConfirmations(acc: Address, confirmations: Int): Long =
-      minBySnapshot(acc, s.height, confirmations)(_.balance)
+    def balanceWithConfirmations(acc: Address, confirmations: Int): Long = ???
 
     def balanceAtHeight(acc: Address, height: Int): Long = ???
 
-    def accountPortfoliosHash: Int = {
-      Hash.accountPortfolios(s.accountPortfolios)
-    }
-
-    def partialPortfolio(a: Address, assets: Set[AssetId] = Set.empty): Portfolio = {
-      val w = s.wavesBalance(a)
-      Portfolio(w.balance, w.leaseInfo, assets.map(id => id -> s.assetBalance(a, id)).toMap)
-    }
+    def accountPortfoliosHash: Int = 0
   }
 
 }

@@ -5,7 +5,7 @@ import java.nio.ByteBuffer
 import cats._
 import com.google.common.primitives.{Bytes, Ints, Longs}
 import com.wavesplatform.settings.GenesisSettings
-import com.wavesplatform.state2.{ByteStr, Diff, LeaseInfo, Portfolio}
+import com.wavesplatform.state2.{ByteStr, LeaseInfo, Portfolio}
 import play.api.libs.json.{JsObject, Json}
 import scorex.account.{Address, PrivateKeyAccount, PublicKeyAccount}
 import scorex.block.fields.FeaturesBlockField

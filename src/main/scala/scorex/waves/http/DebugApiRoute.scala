@@ -82,11 +82,7 @@ case class DebugApiRoute(settings: RestAPISettings,
   @ApiOperation(value = "State", notes = "Get current state", httpMethod = "GET")
   @ApiResponses(Array(new ApiResponse(code = 200, message = "Json state")))
   def state: Route = (path("state") & get) {
-    complete(stateReader.accountPortfolios
-      .map { case (k, v) =>
-        k.address -> v.balance
-      }
-    )
+    complete(???)
   }
 
   @Path("/portfolios/{address}")
@@ -130,11 +126,7 @@ case class DebugApiRoute(settings: RestAPISettings,
     new ApiImplicitParam(name = "height", value = "height", required = true, dataType = "integer", paramType = "path")
   ))
   def stateWaves: Route = (path("stateWaves" / IntNumber) & get) { height =>
-    val result = stateReader.accountPortfolios.keys
-      .map(acc => acc.stringRepr -> stateReader.balanceAtHeight(acc, height))
-      .filter(_._2 != 0)
-      .toMap
-    complete(result)
+    complete(???)
   }
 
   private def rollbackToBlock(blockId: ByteStr, returnTransactionsToUtx: Boolean): Future[ToResponseMarshallable] = Future {
@@ -215,7 +207,7 @@ case class DebugApiRoute(settings: RestAPISettings,
   def minerInfo: Route = (path("minerInfo") & get & withAuth) {
     complete(miner.collectNextBlockGenerationTimes.map { case (a, t) =>
       AccountMiningInfo(a.stringRepr,
-        stateReader.effectiveBalanceAtHeightWithConfirmations(a, stateReader.height, 1000).get,
+        stateReader.effectiveBalanceAtHeightWithConfirmations(a, stateReader.height, 1000),
         t)
     })
   }

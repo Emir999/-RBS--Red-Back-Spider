@@ -1,7 +1,6 @@
 package com.wavesplatform.state2.patch
 
 import com.wavesplatform.TransactionGen
-import com.wavesplatform.state2.LeaseInfo
 import com.wavesplatform.state2.diffs._
 import org.scalacheck.{Gen, Shrink}
 import org.scalatest.prop.{GeneratorDrivenPropertyChecks, PropertyChecks}
@@ -43,8 +42,8 @@ class LeasePatchTest extends PropSpec with PropertyChecks with GeneratorDrivenPr
           TestBlock.create(Seq.empty)),
           TestBlock.create(Seq(lease2)),
           settings) { case (totalDiff, newState) =>
-          newState.activeLeases() shouldBe empty
-          newState.accountPortfolios.map(_._2.leaseInfo).foreach(_ shouldBe LeaseInfo.empty)
+          newState.activeLeases shouldBe empty
+//          newState.accountPortfolios.map(_._2.leaseInfo).foreach(_ shouldBe LeaseInfo.empty)
         }
     }
   }

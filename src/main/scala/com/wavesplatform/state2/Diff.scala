@@ -5,7 +5,7 @@ import cats.implicits._
 import scorex.account.{Address, Alias, PublicKeyAccount}
 import scorex.transaction.Transaction
 
-case class Snapshot(prevHeight: Int, balance: Long, effectiveBalance: Long)
+case class Snapshot(prevHeight: Int, balance: Long, effectiveBalance: Long, assetBalances: Map[ByteStr, Long] = Map.empty)
 
 case class LeaseInfo(leaseIn: Long, leaseOut: Long)
 

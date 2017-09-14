@@ -20,9 +20,9 @@ object TransactionDiffer {
       t1 <- CommonValidation.disallowTxFromFuture(settings, currentBlockTimestamp, t0)
       t2 <- CommonValidation.disallowTxFromPast(prevBlockTimestamp, t1)
       t3 <- CommonValidation.disallowBeforeActivationTime(settings, t2)
-      t4 <- CommonValidation.disallowDuplicateIds(s, settings, currentBlockHeight, t3)
-      t5 <- CommonValidation.disallowSendingGreaterThanBalance(s, settings, currentBlockTimestamp, t4)
-      diff <- t5 match {
+//      t4 <- CommonValidation.disallowDuplicateIds(s, settings, currentBlockHeight, t3)
+//      t5 <- CommonValidation.disallowSendingGreaterThanBalance(s, settings, currentBlockTimestamp, t3)
+      diff <- t3 match {
         case gtx: GenesisTransaction => GenesisTransactionDiff(currentBlockHeight)(gtx)
         case ptx: PaymentTransaction => PaymentTransactionDiff(s, currentBlockHeight, settings, currentBlockTimestamp)(ptx)
         case itx: IssueTransaction => AssetTransactionsDiff.issue(currentBlockHeight)(itx)

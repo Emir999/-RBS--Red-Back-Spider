@@ -21,8 +21,8 @@ class DebugPortfoliosSpecification(override val allNodes: Seq[Node], override va
 
       portfolioAfter <- sender.debugPortfoliosFor(firstAddress, considerUnspent = true)
     } yield {
-      val expectedBalance = portfolioBefore.balance - 10.waves // withdraw + fee
-      assert(portfolioAfter.balance == expectedBalance)
+      val expectedBalance = portfolioBefore.regularBalance - 10.waves // withdraw + fee
+      assert(portfolioAfter.regularBalance == expectedBalance)
     }
 
     Await.result(f, 1.minute)
@@ -38,7 +38,7 @@ class DebugPortfoliosSpecification(override val allNodes: Seq[Node], override va
 
       portfolioAfter <- sender.debugPortfoliosFor(firstAddress, considerUnspent = false)
     } yield {
-      assert(portfolioAfter.balance == portfolioBefore.balance)
+      assert(portfolioAfter.regularBalance == portfolioBefore.regularBalance)
     }
 
     Await.result(f, 1.minute)

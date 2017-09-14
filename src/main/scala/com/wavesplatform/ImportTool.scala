@@ -13,6 +13,7 @@ import com.zaxxer.hikari.{HikariConfig, HikariDataSource}
 import org.flywaydb.core.Flyway
 import scorex.account.AddressScheme
 import scorex.block.Block
+import scorex.transaction.Signed
 import scorex.utils.ScorexLogging
 
 object ImportTool extends ScorexLogging {
@@ -24,7 +25,7 @@ object ImportTool extends ScorexLogging {
     }
 
     val props = new Properties()
-    props.put("url", s"jdbc:h2:${settings.directory}/h2db")
+    props.put("url", s"jdbc:h2:${settings.directory}/h2db;WRITE_DELAY=2000;CACHE_SIZE=256000")
     val hc = new HikariConfig()
     hc.setDataSourceClassName("org.h2.jdbcx.JdbcDataSource")
     //    hc.setDriverClassName("org.h2.Driver")
@@ -35,6 +36,7 @@ object ImportTool extends ScorexLogging {
     val flyway = new Flyway
     flyway.setDataSource(hds)
     flyway.migrate()
+    hc.setAutoCommit(false)
 
     val state = new StateWriterImpl(hds)
 
@@ -42,11 +44,8 @@ object ImportTool extends ScorexLogging {
       settings.blockchainSettings.functionalitySettings, settings.featuresSettings).get
     val historyHeight = history.height()
     val persistedHeight = state.height
-    println(s"${settings.blockchainSettings}")
     println(s"config file: ${new File(args(0)).toPath.toAbsolutePath}")
     println(s"Blockchain height: $historyHeight, file: ${settings.blockchainSettings.blockchainFile}, persistedHeight: $persistedHeight")
-
-
 
     (persistedHeight + 1 to 600000).foldLeft(Option.empty[Block]) {
       case (prevBlock, height) =>
@@ -54,20 +53,16 @@ object ImportTool extends ScorexLogging {
           log.debug(s"Imported $height blocks")
         }
         val blockBytes = history.blockBytes(height).get
-        val block = Block.parseBytes(blockBytes).toOption
-        BlockDiffer.fromBlock(settings.blockchainSettings.functionalitySettings, history, state, prevBlock, block.get) match {
+        val block = Block.parseBytes(blockBytes).get
+        require(Signed.validateSignatures(block).isRight, "invalid block signature")
+        BlockDiffer.fromBlock(settings.blockchainSettings.functionalitySettings, history, state, prevBlock, block) match {
           case Right(diff) =>
-            state.applyBlockDiff(diff, blockBytes, height)
-            block
+            state.applyBlockDiff(diff, block, height)
+            Some(block)
           case Left(e) =>
-            println(e)
+            println(s"at height $height:")
             throw new Exception(String.valueOf(e))
         }
-    }
-
-    1 to 10 foreach { height =>
-      val block = Block.parseBytes(history.blockBytes(height).get)
-
     }
   }
 }

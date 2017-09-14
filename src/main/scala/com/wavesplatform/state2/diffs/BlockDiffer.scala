@@ -2,6 +2,7 @@ package com.wavesplatform.state2.diffs
 
 import cats.Monoid
 import cats.implicits._
+import cats.kernel.Semigroup
 import com.wavesplatform.features.{BlockchainFeatures, FeatureProvider}
 import com.wavesplatform.metrics.Instrumented
 import com.wavesplatform.settings.FunctionalitySettings
@@ -36,7 +37,7 @@ object BlockDiffer extends ScorexLogging with Instrumented {
 
     lazy val currentBlockFeeDistr =
       if (stateHeight < ng4060switchHeight)
-        Some(Diff.empty.copy(portfolios = Map(blockSigner -> block.feesPortfolio)))
+        Some(Diff.empty.copy(portfolios = Map(blockSigner -> block.feesDistribution)))
       else
         None
 
@@ -85,13 +86,24 @@ object BlockDiffer extends ScorexLogging with Instrumented {
       val diff = if (currentBlockHeight == settings.resetEffectiveBalancesAtHeight)
         Monoid.combine(d, LeasePatch(new CompositeStateReader(s, d.asBlockDiff)))
       else d
+
+      implicit val g: Semigroup[Map[ByteStr, Long]] = (x: Map[ByteStr, Long], y: Map[ByteStr, Long]) =>
+        x.keySet.map { k =>
+          val sum = safeSum(x.getOrElse(k, 0L), y.getOrElse(k, 0L))
+          require(sum >= 0, s"Negative balance $sum for asset X'${BigInt(k.arr).toString(16)}', available: ${y.getOrElse(k, 0L)}")
+          k -> sum
+        }.toMap
+
       val newSnapshots = diff.portfolios
-        .collect { case (acc, portfolioDiff) if portfolioDiff.balance != 0 || portfolioDiff.effectiveBalance != 0 =>
+        .collect { case (acc, portfolioDiff) =>
           val oldPortfolio = s.wavesBalance(acc)
           acc -> SortedMap(currentBlockHeight -> Snapshot(
-            prevHeight = s.lastUpdateHeight(acc).getOrElse(0),
-            balance = oldPortfolio.balance + portfolioDiff.balance,
-            effectiveBalance = oldPortfolio.effectiveBalance + portfolioDiff.effectiveBalance))
+            prevHeight = currentBlockHeight,
+            balance = oldPortfolio.regularBalance + portfolioDiff.balance,
+            effectiveBalance = oldPortfolio.effectiveBalance + portfolioDiff.effectiveBalance,
+            assetBalances = if (portfolioDiff.assets.isEmpty) Map.empty
+              else Semigroup.combine(portfolioDiff.assets, s.assetBalance(acc))(g)
+            ))
         }
       BlockDiff(diff, heightDiff, newSnapshots)
     }
