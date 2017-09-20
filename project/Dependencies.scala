@@ -46,7 +46,8 @@ object Dependencies {
     "com.zaxxer" % "HikariCP" % "2.7.0",
     "org.scalikejdbc" %% "scalikejdbc" % "3.0.2",
     "com.h2database" % "h2" % "1.4.196",
-    "com.h2database" % "h2-mvstore" % "1.4.196"
+    "com.h2database" % "h2-mvstore" % "1.4.196",
+    "org.postgresql" % "postgresql" % "42.1.4"
   )
 
   lazy val logging = Seq(

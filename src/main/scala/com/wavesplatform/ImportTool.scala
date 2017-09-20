@@ -5,9 +5,9 @@ import java.util.Properties
 import java.util.concurrent.locks.ReentrantReadWriteLock
 
 import com.typesafe.config.ConfigFactory
+import com.wavesplatform.database.PostgresWriter
 import com.wavesplatform.history.HistoryWriterImpl
 import com.wavesplatform.settings.{WavesSettings, loadConfig}
-import com.wavesplatform.state2.StateWriterImpl
 import com.wavesplatform.state2.diffs.BlockDiffer
 import com.zaxxer.hikari.{HikariConfig, HikariDataSource}
 import org.flywaydb.core.Flyway
@@ -25,20 +25,21 @@ object ImportTool extends ScorexLogging {
     }
 
     val props = new Properties()
-    props.put("url", s"jdbc:h2:${settings.directory}/h2db;WRITE_DELAY=2000;CACHE_SIZE=256000;REUSE_SPACE=TRUE")
+    props.put("url", s"jdbc:postgresql:waves")
     val hc = new HikariConfig()
-    hc.setDataSourceClassName("org.h2.jdbcx.JdbcDataSource")
+    hc.setDataSourceClassName("org.postgresql.ds.PGSimpleDataSource")
     //    hc.setDriverClassName("org.h2.Driver")
-    hc.setUsername("sa")
-    hc.setPassword("sa")
+    hc.setUsername("phearnot")
+//    hc.setPassword("sa")
     hc.setDataSourceProperties(props)
     val hds = new HikariDataSource(hc)
     val flyway = new Flyway
+    flyway.setLocations("db/migration/postgresql")
     flyway.setDataSource(hds)
     flyway.migrate()
     hc.setAutoCommit(false)
 
-    val state = new StateWriterImpl(hds)
+    val state = new PostgresWriter(hds)
 
     val history = HistoryWriterImpl(settings.blockchainSettings.blockchainFile, new ReentrantReadWriteLock(true),
       settings.blockchainSettings.functionalitySettings, settings.featuresSettings).get

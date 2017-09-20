@@ -21,5 +21,4 @@ object LeasePatch {
       orderFills = Map.empty,
       leaseState = s.activeLeases.map(_ -> false).toMap)
   }
-
 }
