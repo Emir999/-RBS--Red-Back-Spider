@@ -15,9 +15,7 @@ import scorex.transaction.ValidationError.ActivationError
 import scorex.transaction.{Signed, Transaction, ValidationError}
 import scorex.utils.ScorexLogging
 
-import scala.collection.SortedMap
-
-object BlockDiffer extends ScorexLogging with Instrumented {
+object BlockDiffer extends ScorexLogging {
 
   def right(diff: Diff): Either[ValidationError, Diff] = Right(diff)
 
@@ -95,15 +93,16 @@ object BlockDiffer extends ScorexLogging with Instrumented {
         }.toMap
 
       val newSnapshots = diff.portfolios
-        .collect { case (acc, portfolioDiff) =>
+        .map { case (acc, portfolioDiff) =>
           val oldPortfolio = s.wavesBalance(acc)
-          acc -> SortedMap(currentBlockHeight -> Snapshot(
-            prevHeight = currentBlockHeight,
-            balance = oldPortfolio.regularBalance + portfolioDiff.balance,
-            effectiveBalance = oldPortfolio.effectiveBalance + portfolioDiff.effectiveBalance,
-            assetBalances = if (portfolioDiff.assets.isEmpty) Map.empty
-              else Semigroup.combine(portfolioDiff.assets, s.assetBalance(acc))(g)
-            ))
+          val newWavesBalance = if (portfolioDiff.balance != 0 || portfolioDiff.effectiveBalance != 0)
+            Some(WavesBalance(oldPortfolio.regularBalance + portfolioDiff.balance,
+              oldPortfolio.effectiveBalance + portfolioDiff.effectiveBalance))
+            else None
+          val assetBalances: Map[ByteStr, Long] = if (portfolioDiff.assets.isEmpty) Map.empty else {
+            Semigroup.combine(portfolioDiff.assets, s.assetBalance(acc))(g)
+          }
+          acc -> Snapshot(newWavesBalance, assetBalances = assetBalances)
         }
       BlockDiff(diff, heightDiff, newSnapshots)
     }

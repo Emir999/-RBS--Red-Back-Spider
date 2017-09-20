@@ -21,18 +21,18 @@ object BalanceDiffValidation extends ScorexLogging with Instrumented {
     val positiveBalanceErrors: Map[Address, String] = changedAccounts.flatMap(acc => {
       val portfolioDiff = d.portfolios(acc)
       val swb = s.wavesBalance(acc)
-      val oldPortfolio = Portfolio(swb.regularBalance, s.leaseInfo(acc), Map.empty)
+      val oldPortfolio = Portfolio(swb.regularBalance, LeaseInfo.empty, Map.empty)
       val newPortfolio = oldPortfolio.combine(portfolioDiff)
 
       val err = if (newPortfolio.balance < 0) {
         Some(s"negative waves balance: $acc, old: ${oldPortfolio.balance}, new: ${newPortfolio.balance}")
       } /*else if (newPortfolio.assets.values.exists(_ < 0)) {
         Some(s"negative asset balance: $acc, new portfolio: ${negativeAssetsInfo(newPortfolio)}")
-      } */else if (newPortfolio.effectiveBalance < 0) {
+      } else if (newPortfolio.effectiveBalance < 0) {
         Some(s"negative effective balance: $acc, old: ${leaseWavesInfo(oldPortfolio)}, new: ${leaseWavesInfo(newPortfolio)}")
       } else if (newPortfolio.balance < newPortfolio.leaseInfo.leaseOut && time > fs.allowLeasedBalanceTransferUntil) {
         Some(s"leased being more than own: $acc, old: ${leaseWavesInfo(oldPortfolio)}, new: ${leaseWavesInfo(newPortfolio)}")
-      } else None
+      } */else None
       err.map(acc -> _)
     }).toMap
 

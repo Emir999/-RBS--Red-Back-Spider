@@ -4,6 +4,7 @@ create domain digest_type as binary(64) not null;
 create domain signature_type as binary(64) not null;
 create domain amount_type as bigint not null check (value >= 0);
 create domain height_type as int not null check (value > 0);
+create domain asset_quantity_type as decimal(50,2) not null check (value >= 0);
 
 create table blocks (
     height height_type primary key,
@@ -34,7 +35,7 @@ create table asset_info (
 
 create table asset_quantity (
     asset_id digest_type references asset_info(asset_id) on delete cascade,
-    quantity amount_type,
+    quantity asset_quantity_type,
     reissuable boolean not null,
     height height_type references blocks(height) on delete cascade,
     primary key (asset_id, height)
@@ -105,3 +106,11 @@ create table payment_transactions (
     tx_hash digest_type primary key,
     height height_type references blocks(height) on delete cascade
 );
+
+create table aliases (
+    alias binary(40) primary key,
+    address address_type,
+    height height_type references blocks(height) on delete cascade
+);
+
+create index aliases_of_address_index on aliases(address);

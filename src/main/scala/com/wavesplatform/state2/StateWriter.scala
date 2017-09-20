@@ -10,6 +10,7 @@ import scorex.account.{Address, AddressOrAlias, Alias, PublicKeyAccount}
 import scorex.block.Block
 import scorex.transaction.assets.IssueTransaction
 import scorex.transaction.lease.{LeaseCancelTransaction, LeaseTransaction}
+import scorex.transaction.{CreateAliasTransaction, GenesisTransaction, PaymentTransaction, SignedTransaction}
 import scorex.transaction.{GenesisTransaction, PaymentTransaction, SignedTransaction}
 
 
@@ -140,9 +141,21 @@ class StateWriterImpl(ds: DataSource) extends StateReader with StateWriter {
     }
   }
 
-  override def aliasesOfAddress(a: Address) = ???
+  override def aliasesOfAddress(a: Address) = readOnly { implicit s =>
+    sql"select alias from aliases where address = ?"
+      .bind(a.bytes.arr)
+      .map(rs => Alias.fromString(rs.get[String](1)).right.get)
+      .list()
+      .apply()
+  }
 
-  override def resolveAlias(a: Alias) = ???
+  override def resolveAlias(a: Alias) = readOnly { implicit s =>
+    sql"select address from aliases where alias = ?"
+      .bind(a.bytes.arr)
+      .map(rs => Address.fromBytes(rs.get[Array[Byte]](1)).right.get)
+      .single()
+      .apply()
+  }
 
   override def activeLeases = readOnly { implicit s =>
     sql"select lease_id from (select lease_id, bool_and(active) still_active from lease_status group by lease_id) where still_active"
@@ -193,10 +206,10 @@ class StateWriterImpl(ds: DataSource) extends StateReader with StateWriter {
     using(DB(ds.getConnection)) { db =>
       db.localTx { implicit s =>
         for {
-          (address, s) <- blockDiff.snapshots
-          (_, ls) = s.last
+          (address, ls) <- blockDiff.snapshots
         } {
-          balanceCache.put(address, WavesBalance(ls.balance, ls.effectiveBalance))
+          ls.wavesBalance.foreach(balanceCache.put(address, _))
+
           if (ls.assetBalances.nonEmpty) {
             assetBalanceCache.put(address, assetBalanceCache.get(address) ++ ls.assetBalances)
           }
@@ -232,10 +245,9 @@ class StateWriterImpl(ds: DataSource) extends StateReader with StateWriter {
              |select top 1 ta.asset_id, ifnull(aq.quantity, 0) + ?, ?, ?
              |from this_asset ta
              |left join asset_quantity aq on ta.asset_id = aq.asset_id
-             |order by aq.height desc
-             |""".stripMargin
+             |order by aq.height desc""".stripMargin
           .batch(blockDiff.txsDiff.issuedAssets.map {
-            case (id, ai) => Seq(id.arr: ParameterBinder, ai.volume, ai.isReissuable, newHeight)
+            case (id, ai) => Seq(id.arr, ai.volume, ai.isReissuable, newHeight)
           }.toSeq: _*)
           .apply()
 
@@ -274,28 +286,31 @@ class StateWriterImpl(ds: DataSource) extends StateReader with StateWriter {
           .batch((for {
             (address, p) <- blockDiff.txsDiff.portfolios
             if p.leaseInfo.leaseIn != 0 || p.leaseInfo.leaseOut != 0
-          } yield Seq(address.bytes.arr: ParameterBinder, p.leaseInfo.leaseIn, p.leaseInfo.leaseOut, newHeight)).toSeq: _*)
+          } yield Seq(address.bytes.arr, p.leaseInfo.leaseIn, p.leaseInfo.leaseOut, newHeight)).toSeq: _*)
           .apply()
 
         sql"""insert into waves_balances (address, regular_balance, effective_balance, height)
              |values(?, ?, ?, ?)""".stripMargin
           .batch((for {
             (address, s) <- blockDiff.snapshots
-            (_, ls) = s.last
-          } yield Seq(address.bytes.arr: ParameterBinder, ls.balance, ls.effectiveBalance, newHeight)).toSeq: _*)
+            ls <- s.wavesBalance
+          } yield Seq(address.bytes.arr, ls.regularBalance, ls.effectiveBalance, newHeight)).toSeq: _*)
           .apply()
 
         val assetBalanceParams = for {
-          (address, s) <- blockDiff.snapshots
-          (_, ls) = s.last
+          (address, ls) <- blockDiff.snapshots
           (assetId, balance) <- ls.assetBalances
           _ = require(balance >= 0, s"Balance $balance <= 0 for address X'0${BigInt(address.bytes.arr).toString(16)}' asset X'${BigInt(assetId.arr).toString(16)}'")
-        } yield Seq(address.bytes.arr: ParameterBinder, assetId.arr, balance, newHeight)
+        } yield Seq(address.bytes.arr, assetId.arr, balance, newHeight)
         sql"insert into asset_balances (address, asset_id, balance, height) values (?,?,?,?)"
           .batch(assetBalanceParams.toSeq: _*)
           .apply()
 
-
+        sql"insert into aliases (alias, address, height) values (?,?,?)"
+          .batch(blockDiff.txsDiff.transactions.values.collect {
+            case (_, cat: CreateAliasTransaction, _) => Seq(cat.alias.bytes.arr, cat.sender.toAddress.bytes.arr, newHeight)
+          }.toSeq: _*)
+          .apply()
       }
     }
   }

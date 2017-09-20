@@ -8,7 +8,7 @@ import scala.collection.SortedMap
 
 case class BlockDiff(txsDiff: Diff,
                      heightDiff: Int,
-                     snapshots: Map[Address, SortedMap[Int, Snapshot]])
+                     snapshots: Map[Address, Snapshot])
 
 object BlockDiff {
 

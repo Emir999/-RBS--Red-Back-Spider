@@ -5,7 +5,17 @@ import cats.implicits._
 import scorex.account.{Address, Alias, PublicKeyAccount}
 import scorex.transaction.Transaction
 
-case class Snapshot(prevHeight: Int, balance: Long, effectiveBalance: Long, assetBalances: Map[ByteStr, Long] = Map.empty)
+case class Snapshot(wavesBalance: Option[WavesBalance] = None, assetBalances: Map[ByteStr, Long] = Map.empty)
+
+object Snapshot {
+  implicit val m: Monoid[Snapshot] = new Monoid[Snapshot] {
+    override def empty = Snapshot()
+    override def combine(x: Snapshot, y: Snapshot) = Snapshot(
+      y.wavesBalance orElse x.wavesBalance,
+      y.assetBalances ++ x.assetBalances
+    )
+  }
+}
 
 case class LeaseInfo(leaseIn: Long, leaseOut: Long)
 

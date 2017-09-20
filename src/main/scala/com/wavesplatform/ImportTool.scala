@@ -25,7 +25,7 @@ object ImportTool extends ScorexLogging {
     }
 
     val props = new Properties()
-    props.put("url", s"jdbc:h2:${settings.directory}/h2db;WRITE_DELAY=2000;CACHE_SIZE=256000")
+    props.put("url", s"jdbc:h2:${settings.directory}/h2db;WRITE_DELAY=2000;CACHE_SIZE=256000;REUSE_SPACE=TRUE")
     val hc = new HikariConfig()
     hc.setDataSourceClassName("org.h2.jdbcx.JdbcDataSource")
     //    hc.setDriverClassName("org.h2.Driver")
@@ -47,7 +47,7 @@ object ImportTool extends ScorexLogging {
     println(s"config file: ${new File(args(0)).toPath.toAbsolutePath}")
     println(s"Blockchain height: $historyHeight, file: ${settings.blockchainSettings.blockchainFile}, persistedHeight: $persistedHeight")
 
-    (persistedHeight + 1 to 600000).foldLeft(Option.empty[Block]) {
+    (persistedHeight + 1 to historyHeight).foldLeft(Option.empty[Block]) {
       case (prevBlock, height) =>
         if (height % 200 == 0) {
           log.debug(s"Imported $height blocks")
