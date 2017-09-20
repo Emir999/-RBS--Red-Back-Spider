@@ -5,6 +5,18 @@ create domain signature_type as binary(64) not null;
 create domain amount_type as bigint not null check (value >= 0);
 create domain height_type as int not null check (value > 0);
 create domain asset_quantity_type as decimal(50,2) not null check (value >= 0);
+create domain tx_type_id_type as enum(
+    'genesis',
+    'payment',
+    'issue',
+    'transfer',
+    'reissue',
+    'burn',
+    'exchange',
+    'lease',
+    'lease_cancel',
+    'create_alias'
+) not null;
 
 create table blocks (
     height height_type primary key,
@@ -87,6 +99,7 @@ create table filled_quantity (
 create table transaction_offsets (
     tx_id digest_type,
     signature signature_type,
+    tx_type tx_type_id_type,
     start_offset int not null,
     height height_type references blocks(height) on delete cascade,
 

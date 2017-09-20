@@ -11,7 +11,7 @@ import scorex.block.Block
 import scorex.transaction.assets.IssueTransaction
 import scorex.transaction.lease.{LeaseCancelTransaction, LeaseTransaction}
 import scorex.transaction.{CreateAliasTransaction, GenesisTransaction, PaymentTransaction, SignedTransaction}
-import scorex.transaction.{GenesisTransaction, PaymentTransaction, SignedTransaction}
+import scorex.utils.ScorexLogging
 
 
 trait StateWriter {
@@ -21,8 +21,6 @@ trait StateWriter {
 }
 
 class StateWriterImpl(ds: DataSource) extends StateReader with StateWriter {
-  implicit def toParamBinder[A](v: A)(implicit ev: ParameterBinderFactory[A]): ParameterBinder = ev(v)
-
   private def readOnly[A](f: DBSession => A): A = using(DB(ds.getConnection))(_.readOnly(f))
 
   override def nonZeroLeaseBalances = readOnly { implicit s =>
@@ -43,7 +41,7 @@ class StateWriterImpl(ds: DataSource) extends StateReader with StateWriter {
 
   override def containsTransaction(id: ByteStr) = readOnly { implicit s =>
     sql"select count(*) from transaction_offsets where tx_id = ?"
-      .bind(id.arr: ParameterBinder)
+      .bind(id.arr)
       .map(_.get[Int](1))
       .single()
       .apply()
@@ -58,7 +56,7 @@ class StateWriterImpl(ds: DataSource) extends StateReader with StateWriter {
              |from waves_balances wb
              |where wb.address = ?
              |order by wb.height desc""".stripMargin
-          .bind(key.bytes.arr: ParameterBinder)
+          .bind(key.bytes.arr)
           .map { rs => WavesBalance(rs.get[Long](1), rs.get[Long](2)) }
           .single()
           .apply()
@@ -70,7 +68,7 @@ class StateWriterImpl(ds: DataSource) extends StateReader with StateWriter {
 
   override def leaseInfo(a: Address) = readOnly { implicit s =>
     sql"select top 1 lease_in, lease_out from lease_balances where address = ? order by height desc"
-      .bind(a.bytes.arr: ParameterBinder)
+      .bind(a.bytes.arr)
       .map(rs => LeaseInfo(rs.get[Long](1), rs.get[Long](2)))
       .single()
       .apply()
@@ -102,7 +100,7 @@ class StateWriterImpl(ds: DataSource) extends StateReader with StateWriter {
 
   override def assetInfo(id: ByteStr) = readOnly { implicit s =>
     sql"select top 1 reissuable, quantity from asset_quantity where asset_id = ? order by height desc"
-      .bind(id.arr: ParameterBinder)
+      .bind(id.arr)
       .map { rs => AssetInfo(rs.get[Boolean](1), rs.get[Long](2)) }
       .single()
       .apply()
@@ -114,7 +112,7 @@ class StateWriterImpl(ds: DataSource) extends StateReader with StateWriter {
          |where ai.asset_id = aq.asset_id
          |and ai.asset_id = ?
          |order by aq.height desc""".stripMargin
-      .bind(id.arr: ParameterBinder)
+      .bind(id.arr)
       .map { rs => AssetDescription(
         PublicKeyAccount(rs.get[Array[Byte]](1)),
         rs.get[Array[Byte]](2),
@@ -169,7 +167,7 @@ class StateWriterImpl(ds: DataSource) extends StateReader with StateWriter {
          |select lease_id, bool_and(active) active from lease_status where lease_id = ? group by lease_id)
          |select li.*, tl.active from lease_info li, this_lease_status tl
          |where li.lease_id = tl.lease_id""".stripMargin
-      .bind(leaseId.arr: ParameterBinder)
+      .bind(leaseId.arr)
         .map(rs => LeaseDetails(
           PublicKeyAccount(rs.get[Array[Byte]](2)),
           AddressOrAlias.fromBytes(rs.get[Array[Byte]](3), 0).right.get._1,
@@ -182,7 +180,7 @@ class StateWriterImpl(ds: DataSource) extends StateReader with StateWriter {
 
   override def lastUpdateHeight(acc: Address) = readOnly { implicit s =>
     sql"select top 1 height from waves_balances where address = ? order by height desc"
-      .bind(acc.bytes.arr: ParameterBinder)
+      .bind(acc.bytes.arr)
       .map(_.get[Option[Int]](1)).single.apply().flatten
   }
 
@@ -193,7 +191,7 @@ class StateWriterImpl(ds: DataSource) extends StateReader with StateWriter {
          |select top 1 ifnull(fq.filled_quantity, 0), ifnull(fq.fee, 0) from this_order to
          |left join filled_quantity fq on to.order_id = fq.order_id
          |order by fq.height desc""".stripMargin
-      .bind(orderId.arr: ParameterBinder)
+      .bind(orderId.arr)
       .map(rs => OrderFillInfo(rs.get[Long](1), rs.get[Long](2)))
       .single()
       .apply()
@@ -217,23 +215,22 @@ class StateWriterImpl(ds: DataSource) extends StateReader with StateWriter {
 
         sql"""insert into blocks (height, block_id, block_timestamp, generator_address, block_data_bytes)
              |values (?,?,?,?,?)""".stripMargin
-          .bind(newHeight, block.uniqueId.arr: ParameterBinder, new Timestamp(block.timestamp),
-            block.signerData.generator.toAddress.bytes.arr: ParameterBinder, block.bytes: ParameterBinder)
+          .bind(newHeight, block.uniqueId.arr, new Timestamp(block.timestamp),
+            block.signerData.generator.toAddress.bytes.arr, block.bytes)
           .update()
           .apply()
 
-        sql"insert into transaction_offsets (tx_id, signature, start_offset, height) values (?,?,?,?)"
+        sql"insert into transaction_offsets (tx_id, signature, tx_type, start_offset, height) values (?,?,?,?,?)"
           .batch(blockDiff.txsDiff.transactions.values.map {
-            case (_, pt: PaymentTransaction, _) => Seq(pt.hash: ParameterBinder, pt.signature.arr: ParameterBinder, 0, newHeight)
-            case (_, t: SignedTransaction, _) => Seq(t.id.arr: ParameterBinder, t.signature.arr: ParameterBinder, 0, newHeight)
-            case (_, gt: GenesisTransaction, _) => Seq(gt.id.arr: ParameterBinder, gt.signature.arr: ParameterBinder, 0, newHeight)
+            case (_, pt: PaymentTransaction, _) => Seq(pt.hash, pt.signature.arr, pt.transactionType.id, 0, newHeight)
+            case (_, t: SignedTransaction, _) => Seq(t.id.arr, t.signature.arr, t.transactionType.id, 0, newHeight)
+            case (_, gt: GenesisTransaction, _) => Seq(gt.id.arr, gt.signature.arr, gt.transactionType.id, 0, newHeight)
           }.toSeq: _*)
           .apply()
 
         val issuedAssetParams = blockDiff.txsDiff.transactions.values.collect {
           case (_, i: IssueTransaction, _) =>
-            Seq(i.assetId.arr: ParameterBinder, i.sender.publicKey: ParameterBinder, i.decimals,
-              i.name: ParameterBinder, i.description: ParameterBinder, newHeight): Seq[Any]
+            Seq(i.assetId.arr, i.sender.publicKey, i.decimals, i.name, i.description, newHeight): Seq[Any]
         }.toSeq
 
         sql"insert into asset_info(asset_id, issuer, decimals, name, description, height) values (?,?,?,?,?,?)"
@@ -259,21 +256,21 @@ class StateWriterImpl(ds: DataSource) extends StateReader with StateWriter {
              |limit 1""".stripMargin
           .batch((for {
             (orderId, fillInfo) <- blockDiff.txsDiff.orderFills
-          } yield Seq(orderId.arr: ParameterBinder, fillInfo.volume, fillInfo.fee, newHeight)).toSeq: _*)
+          } yield Seq(orderId.arr, fillInfo.volume, fillInfo.fee, newHeight)).toSeq: _*)
             .apply()
 
         sql"insert into lease_info (lease_id, sender, recipient, amount, height) values (?,?,?,?,?)"
           .batch(blockDiff.txsDiff.transactions.collect {
             case (_, (_, lt: LeaseTransaction, _)) =>
-              Seq(lt.id.arr: ParameterBinder, lt.sender.publicKey: ParameterBinder,
-                lt.recipient.bytes.arr: ParameterBinder, lt.amount, newHeight)
+              Seq(lt.id.arr, lt.sender.publicKey,
+                lt.recipient.bytes.arr, lt.amount, newHeight)
           }.toSeq: _*)
           .apply()
 
         sql"insert into lease_status (lease_id, active, height) values (?,?,?)"
           .batch(blockDiff.txsDiff.transactions.collect {
-            case (_, (_, lt: LeaseTransaction, _)) => Seq(lt.id.arr: ParameterBinder, true, newHeight)
-            case (_, (_, lc: LeaseCancelTransaction, _)) => Seq(lc.leaseId.arr: ParameterBinder, false, newHeight)
+            case (_, (_, lt: LeaseTransaction, _)) => Seq(lt.id.arr, true, newHeight)
+            case (_, (_, lc: LeaseCancelTransaction, _)) => Seq(lc.leaseId.arr, false, newHeight)
           }.toSeq: _*)
           .apply()
 
@@ -311,7 +308,34 @@ class StateWriterImpl(ds: DataSource) extends StateReader with StateWriter {
             case (_, cat: CreateAliasTransaction, _) => Seq(cat.alias.bytes.arr, cat.sender.toAddress.bytes.arr, newHeight)
           }.toSeq: _*)
           .apply()
+
+        sql"insert into address_transaction_ids (address, tx_id, signature, height) values (?,?,?,?)"
+          .batch((for {
+              (_, (_, tx, addresses)) <- blockDiff.txsDiff.transactions
+              address <- addresses
+            } yield tx match {
+              case pt: PaymentTransaction => Seq(address.bytes.arr, pt.hash, pt.signature.arr, newHeight)
+              case t: SignedTransaction => Seq(address.bytes.arr, t.id.arr, t.signature.arr, newHeight)
+              case gt: GenesisTransaction => Seq(address.bytes.arr, gt.id.arr, gt.signature.arr, newHeight)
+            }).toSeq: _*)
+          .apply()
       }
     }
+  }
+}
+
+object StateWriterImpl extends ScorexLogging {
+
+  private def withTime[R](f: => R): (R, Long) = {
+    val t0 = System.currentTimeMillis()
+    val r: R = f
+    val t1 = System.currentTimeMillis()
+    (r, t1 - t0)
+  }
+
+  def measureLog[R](s: String)(f: => R): R = {
+    val (r, time) = withTime(f)
+    log.trace(s"$s took ${time}ms")
+    r
   }
 }
