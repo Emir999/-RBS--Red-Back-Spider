@@ -141,6 +141,30 @@ create table payment_transactions (
     height height_type references blocks(height) on delete cascade
 );
 
+create table exchange_transactions (
+    tx_id digest_type primary key,
+    amount_asset_id bytea,
+    price_asset_id bytea,
+    amount amount_type,
+    price amount_type,
+    height height_type references blocks(height) on delete cascade,
+
+    constraint valid_pair check (
+        (amount_asset_id is not null or price_asset_id is not null) and amount_asset_id != price_asset_id
+    )
+);
+
+create table transfer_transactions (
+    tx_id digest_type primary key,
+    sender address_type,
+    recipient address_or_alias,
+    asset_id bytea,
+    amount amount_type,
+    fee_asset_id bytea,
+    fee amount_type,
+    height height_type references blocks(height) on delete cascade
+);
+
 create table aliases (
     alias bytea primary key,
     address address_type,
