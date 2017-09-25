@@ -26,7 +26,7 @@ case class AddressApiRoute(settings: RestAPISettings, wallet: Wallet, state: Sta
 
   override lazy val route =
     pathPrefix("addresses") {
-      validate ~ seed ~ balanceWithConfirmations ~ balanceDetails ~ balance ~ balanceWithConfirmations ~ verify ~ sign ~ deleteAddress ~ verifyText ~
+      validate ~ balanceWithConfirmations ~ balanceDetails ~ balance ~ balanceWithConfirmations ~ verify ~ sign ~ deleteAddress ~ verifyText ~
         signText ~ seq ~ publicKey ~ effectiveBalance ~ effectiveBalanceWithConfirmations
     } ~ root ~ create
 
@@ -167,21 +167,6 @@ case class AddressApiRoute(settings: RestAPISettings, wallet: Wallet, state: Sta
     path("effectiveBalance" / Segment / IntNumber) { case (address, confirmations) =>
       complete(
         effectiveBalanceJson(address, confirmations)
-      )
-    }
-  }
-
-  @Path("/seed/{address}")
-  @ApiOperation(value = "Seed", notes = "Export seed value for the {address}", httpMethod = "GET")
-  @ApiImplicitParams(Array(
-    new ApiImplicitParam(name = "address", value = "Address", required = true, dataType = "string", paramType = "path")
-  ))
-  def seed: Route = {
-    (path("seed" / Segment) & get & withAuth) { address =>
-      complete(for {
-        pk <- wallet.findWallet(address)
-        seed <- wallet.exportAccountSeed(pk)
-      } yield Json.obj("address" -> address, "seed" -> Base58.encode(seed))
       )
     }
   }

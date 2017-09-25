@@ -115,9 +115,8 @@ case class WavesApiRoute(settings: RestAPISettings, wallet: Wallet, utx: UtxPool
   def createdSignedPayment: Route = post {
     path("create-signed-payment") {
       json[UnsignedPayment] { payment =>
+        val senderAccount = Wallet.generateNewAccount()
         for {
-          _seed <- Base58.decode(payment.senderWalletSeed).toOption.toRight(InvalidSeed)
-          senderAccount = Wallet.generateNewAccount(_seed, payment.senderAddressNonce)
           recipientAccount <- Address.fromString(payment.recipient).left.map(ApiError.fromValidationError)
           _tx <- PaymentTransaction.create(senderAccount, recipientAccount, payment.amount, payment.fee, payment.timestamp)
             .left.map(ApiError.fromValidationError)
