@@ -25,9 +25,8 @@ object AssetTransactionsDiff {
   }
 
   def reissue(state: StateReader, settings: FunctionalitySettings, blockTime: Long, height: Int)(tx: ReissueTransaction): Either[ValidationError, Diff] = {
-    findReferencedAsset(tx, state, tx.assetId).flatMap(itx => {
-      val oldInfo = state.assetInfo(tx.assetId).get
-      if (oldInfo.isReissuable || blockTime <= settings.allowInvalidReissueInSameBlockUntilTimestamp) {
+    findReferencedAsset(tx, state, tx.assetId).flatMap(oldInfo => {
+      if (oldInfo.info.isReissuable || blockTime <= settings.allowInvalidReissueInSameBlockUntilTimestamp) {
         Right(Diff(height = height,
           tx = tx,
           portfolios = Map(tx.sender.toAddress -> Portfolio(

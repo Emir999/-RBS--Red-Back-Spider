@@ -38,9 +38,14 @@ object OrderFillInfo {
   }
 }
 
-case class AssetDescription(issuer: PublicKeyAccount, name: Array[Byte], description: Array[Byte], decimals: Int, info: AssetInfo)
+case class AssetDescription(
+    issuer: PublicKeyAccount,
+    name: Array[Byte],
+    description: Array[Byte],
+    decimals: Int,
+    info: AssetInfo)
 
-case class AssetInfo(isReissuable: Boolean, volume: Long)
+case class AssetInfo(isReissuable: Boolean, volume: BigInt)
 
 object AssetInfo {
   implicit val assetInfoMonoid = new Monoid[AssetInfo] {

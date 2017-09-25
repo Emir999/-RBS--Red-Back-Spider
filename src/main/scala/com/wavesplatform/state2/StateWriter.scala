@@ -98,14 +98,6 @@ class StateWriterImpl(ds: DataSource) extends StateReader with StateWriter {
 
   override def assetBalance(a: Address) = assetBalanceCache.get(a)
 
-  override def assetInfo(id: ByteStr) = readOnly { implicit s =>
-    sql"select top 1 reissuable, quantity from asset_quantity where asset_id = ? order by height desc"
-      .bind(id.arr)
-      .map { rs => AssetInfo(rs.get[Boolean](1), rs.get[Long](2)) }
-      .single()
-      .apply()
-  }
-
   override def assetDescription(id: ByteStr) = readOnly { implicit s =>
     sql"""select top 1 ai.issuer, ai.name, ai.description, ai.decimals, aq.reissuable, aq.quantity
          |from asset_info ai, asset_quantity aq
@@ -298,7 +290,7 @@ class StateWriterImpl(ds: DataSource) extends StateReader with StateWriter {
           (address, ls) <- blockDiff.snapshots
           (assetId, balance) <- ls.assetBalances
           _ = require(balance >= 0, s"Balance $balance <= 0 for address X'0${BigInt(address.bytes.arr).toString(16)}' asset X'${BigInt(assetId.arr).toString(16)}'")
-        } yield Seq(address.bytes.arr, assetId.arr, balance, newHeight)
+        } yield Seq(address.bytes.arr, assetId.arr, balance, newHeight): Seq[Any]
         sql"insert into asset_balances (address, asset_id, balance, height) values (?,?,?,?)"
           .batch(assetBalanceParams.toSeq: _*)
           .apply()

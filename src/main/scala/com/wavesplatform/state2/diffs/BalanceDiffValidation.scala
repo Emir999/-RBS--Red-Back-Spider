@@ -43,5 +43,5 @@ object BalanceDiffValidation extends ScorexLogging with Instrumented {
     }
   }
 
-  private def leaseWavesInfo(p: Portfolio): (Long, LeaseInfo) = (p.balance, p.leaseInfo)
+//  private def leaseWavesInfo(p: Portfolio): (Long, LeaseInfo) = (p.balance, p.leaseInfo)
 }

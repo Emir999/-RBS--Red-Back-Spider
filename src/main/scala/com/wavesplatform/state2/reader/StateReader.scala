@@ -18,8 +18,6 @@ trait StateReader {
 
   def assetDescription(id: ByteStr): Option[AssetDescription]
 
-  def assetInfo(id: ByteStr): Option[AssetInfo]
-
   def wavesBalance(a: Address): WavesBalance
 
   def assetBalance(a: Address): Map[ByteStr, Long]
@@ -72,12 +70,6 @@ object StateReader {
     def assetDistribution(assetId: Array[Byte]): Map[String, Long] =
       s.assetDistribution(ByteStr(assetId))
         .map { case (acc, amt) => (acc.address, amt) }
-
-    def isReissuable(id: Array[Byte]): Boolean =
-      s.assetInfo(ByteStr(id)).get.isReissuable
-
-    def totalAssetQuantity(assetId: AssetId): Long =
-      s.assetInfo(assetId).get.volume
 
     def effectiveBalanceAtHeightWithConfirmations(acc: Address, atHeight: Int, confirmations: Int): Long = ???
 

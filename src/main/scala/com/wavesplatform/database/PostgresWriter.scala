@@ -24,7 +24,7 @@ class PostgresWriter(ds: DataSource) extends StateReader with StateWriter {
          |where lb.address = last_balance.address
          |and lb.height = last_balance.height
          |and (lease_in <> 0 or lease_out <> 0)""".stripMargin
-      .map(rs => Address.fromBytes(rs.get[Array[Byte]](1)).right.get -> LeaseInfo(rs.get[Long](2), rs.get[Long](3)))
+      .map(rs => Address.fromString(rs.get[String](1)).right.get -> LeaseInfo(rs.get[Long](2), rs.get[Long](3)))
       .list()
       .apply()
       .toMap
@@ -52,7 +52,7 @@ class PostgresWriter(ds: DataSource) extends StateReader with StateWriter {
            |where wb.address = ?
            |order by wb.height desc
            |limit 1""".stripMargin
-        .bind(key.bytes.arr)
+        .bind(key.address)
         .map { rs => WavesBalance(rs.get[Long](1), rs.get[Long](2)) }
         .single()
         .apply()
@@ -64,7 +64,7 @@ class PostgresWriter(ds: DataSource) extends StateReader with StateWriter {
 
   override def leaseInfo(a: Address) = readOnly { implicit s =>
     sql"select lease_in, lease_out from lease_balances where address = ? order by height desc limit 1"
-      .bind(a.bytes.arr)
+      .bind(a.address)
       .map(rs => LeaseInfo(rs.get[Long](1), rs.get[Long](2)))
       .single()
       .apply()
@@ -84,7 +84,7 @@ class PostgresWriter(ds: DataSource) extends StateReader with StateWriter {
              |where ab.height = lh.height
              |and ab.asset_id = lh.asset_id
              |and ab.address = lh.address""".stripMargin
-          .bind(key.bytes.arr)
+          .bind(key.address)
           .map(rs => ByteStr(rs.get[Array[Byte]](1)) -> rs.get[Long](2))
           .list()
           .apply()
@@ -107,24 +107,29 @@ class PostgresWriter(ds: DataSource) extends StateReader with StateWriter {
       }
     })
 
-  override def assetInfo(id: ByteStr) = assetInfoCache.get(id)
+  private val assetDescriptionCache = CacheBuilder.newBuilder()
+    .recordStats()
+    .maximumSize(10000)
+    .build(new CacheLoader[ByteStr, Option[AssetDescription]] {
+      override def load(key: ByteStr) = readOnly { implicit s =>
+        sql"""select ai.issuer, ai.name, ai.description, ai.decimals, aq.reissuable, aq.total_quantity
+             |from asset_info ai, asset_quantity aq
+             |where ai.asset_id = aq.asset_id
+             |and ai.asset_id = ?
+             |order by aq.height desc limit 1""".stripMargin
+          .bind(key.arr)
+          .map { rs => AssetDescription(
+            PublicKeyAccount(rs.get[Array[Byte]](1)),
+            rs.get[Array[Byte]](2),
+            rs.get[Array[Byte]](3),
+            rs.get[Int](4),
+            AssetInfo(rs.get[Boolean](5), rs.get[BigInt](6))) }
+          .single()
+          .apply()
+      }
+    })
 
-  override def assetDescription(id: ByteStr) = readOnly { implicit s =>
-    sql"""select ai.issuer, ai.name, ai.description, ai.decimals, aq.reissuable, aq.quantity
-         |from asset_info ai, asset_quantity aq
-         |where ai.asset_id = aq.asset_id
-         |and ai.asset_id = ?
-         |order by aq.height desc limit 1""".stripMargin
-      .bind(id.arr)
-      .map { rs => AssetDescription(
-        PublicKeyAccount(rs.get[Array[Byte]](1)),
-        rs.get[Array[Byte]](2),
-        rs.get[Array[Byte]](3),
-        rs.get[Int](4),
-        AssetInfo(rs.get[Boolean](5), rs.get[Long](6))) }
-      .single()
-      .apply()
-  }
+  override def assetDescription(id: ByteStr) = assetDescriptionCache.get(id)
 
   private val h = new AtomicInteger(readOnly { implicit s =>
     sql"select coalesce(max(height), 0) from blocks".map(_.get[Int](1)).single().apply().getOrElse(0)
@@ -134,19 +139,17 @@ class PostgresWriter(ds: DataSource) extends StateReader with StateWriter {
 
   override def accountTransactionIds(a: Address, limit: Int) = ???
 
-  override def paymentTransactionIdByHash(hash: ByteStr) = using(DB(ds.getConnection)) { db =>
-    db.readOnly { implicit s =>
-      sql"select * from payment_transactions where tx_hash = ?"
-        .bind(hash.arr)
-        .map(rs => ByteStr(rs.get[Array[Byte]](1)))
-        .single()
-        .apply()
-    }
+  override def paymentTransactionIdByHash(hash: ByteStr) = readOnly { implicit s =>
+    sql"select * from payment_transactions where tx_hash = ?"
+      .bind(hash.arr)
+      .map(rs => ByteStr(rs.get[Array[Byte]](1)))
+      .single()
+      .apply()
   }
 
   override def aliasesOfAddress(a: Address) = readOnly { implicit s =>
     sql"select alias from aliases where address = ?"
-      .bind(a.bytes.arr)
+      .bind(a.address)
       .map(rs => Alias.fromString(rs.get[String](1)).right.get)
       .list()
       .apply()
@@ -155,7 +158,7 @@ class PostgresWriter(ds: DataSource) extends StateReader with StateWriter {
   override def resolveAlias(a: Alias) = readOnly { implicit s =>
     sql"select address from aliases where alias = ?"
       .bind(a.bytes.arr)
-      .map(rs => Address.fromBytes(rs.get[Array[Byte]](1)).right.get)
+      .map(rs => Address.fromString(rs.get[String](1)).right.get)
       .single()
       .apply()
   }
@@ -175,7 +178,7 @@ class PostgresWriter(ds: DataSource) extends StateReader with StateWriter {
       .bind(leaseId.arr)
       .map(rs => LeaseDetails(
         PublicKeyAccount(rs.get[Array[Byte]](2)),
-        AddressOrAlias.fromBytes(rs.get[Array[Byte]](3), 0).right.get._1,
+        AddressOrAlias.fromString(rs.get[String](3)).right.get,
         rs.get[Int](5),
         rs.get[Long](4),
         rs.get[Boolean](6)))
@@ -185,7 +188,7 @@ class PostgresWriter(ds: DataSource) extends StateReader with StateWriter {
 
   override def lastUpdateHeight(acc: Address) = readOnly { implicit s =>
     sql"select height from waves_balances where address = ? order by height desc limit 1"
-      .bind(acc.bytes.arr)
+      .bind(acc.address)
       .map(_.get[Option[Int]](1)).single.apply().flatten
   }
 
@@ -235,20 +238,12 @@ class PostgresWriter(ds: DataSource) extends StateReader with StateWriter {
           .apply()
 
         storeLeaseBalances(blockDiff, newHeight)
-
-        sql"""insert into waves_balances (address, regular_balance, effective_balance, height)
-             |values(?, ?, ?, ?)""".stripMargin
-          .batch((for {
-            (address, s) <- blockDiff.snapshots
-            ls <- s.wavesBalance
-          } yield Seq(address.bytes.arr, ls.regularBalance, ls.effectiveBalance, newHeight)).toSeq: _*)
-          .apply()
-
+        storeWavesBalances(blockDiff, newHeight)
         storeAssetBalances(blockDiff, newHeight)
 
         sql"insert into aliases (alias, address, height) values (?,?,?)"
           .batch(blockDiff.txsDiff.transactions.values.collect {
-            case (_, cat: CreateAliasTransaction, _) => Seq(cat.alias.bytes.arr, cat.sender.toAddress.bytes.arr, newHeight)
+            case (_, cat: CreateAliasTransaction, _) => Seq(cat.alias.bytes.arr, cat.sender.toAddress.address, newHeight)
           }.toSeq: _*)
           .apply()
 
@@ -256,6 +251,14 @@ class PostgresWriter(ds: DataSource) extends StateReader with StateWriter {
       }
     }
   }
+
+  private def storeWavesBalances(blockDiff: BlockDiff, newHeight: Int)(implicit session: DBSession) =
+    sql"insert into waves_balances (address, regular_balance, effective_balance, height) values(?, ?, ?, ?)"
+      .batch((for {
+        (address, s) <- blockDiff.snapshots
+        ls <- s.wavesBalance
+      } yield Seq(address.address, ls.regularBalance, ls.effectiveBalance, newHeight)).toSeq: _*)
+      .apply()
 
   private def storeLeaseBalances(blockDiff: BlockDiff, newHeight: Int)(implicit session: DBSession) = {
     sql"""insert into lease_balances (address, lease_in, lease_out, height)
@@ -269,7 +272,7 @@ class PostgresWriter(ds: DataSource) extends StateReader with StateWriter {
       .batch((for {
         (address, p) <- blockDiff.txsDiff.portfolios
         if p.leaseInfo.leaseIn != 0 || p.leaseInfo.leaseOut != 0
-      } yield Seq(p.leaseInfo.leaseIn, p.leaseInfo.leaseOut, newHeight, address.bytes.arr, address.bytes.arr)).toSeq: _*)
+      } yield Seq(p.leaseInfo.leaseIn, p.leaseInfo.leaseOut, newHeight, address.address, address.address)).toSeq: _*)
       .apply()
   }
 
@@ -279,9 +282,9 @@ class PostgresWriter(ds: DataSource) extends StateReader with StateWriter {
         (_, (_, tx, addresses)) <- blockDiff.txsDiff.transactions
         address <- addresses
       } yield tx match {
-        case pt: PaymentTransaction => Seq(address.bytes.arr, pt.hash, pt.signature.arr, newHeight)
-        case t: SignedTransaction => Seq(address.bytes.arr, t.id.arr, t.signature.arr, newHeight)
-        case gt: GenesisTransaction => Seq(address.bytes.arr, gt.id.arr, gt.signature.arr, newHeight)
+        case pt: PaymentTransaction => Seq(address.address, pt.hash, pt.signature.arr, newHeight)
+        case t: SignedTransaction => Seq(address.address, t.id.arr, t.signature.arr, newHeight)
+        case gt: GenesisTransaction => Seq(address.address, gt.id.arr, gt.signature.arr, newHeight)
       }).toSeq: _*)
       .apply()
   }
@@ -291,7 +294,7 @@ class PostgresWriter(ds: DataSource) extends StateReader with StateWriter {
       (address, ls) <- blockDiff.snapshots
       (assetId, balance) <- ls.assetBalances
       _ = require(balance >= 0, s"Balance $balance <= 0 for address X'0${BigInt(address.bytes.arr).toString(16)}' asset X'${BigInt(assetId.arr).toString(16)}'")
-    } yield Seq(address.bytes.arr, assetId.arr, balance, newHeight)
+    } yield Seq(address.address, assetId.arr, balance, newHeight): Seq[Any]
     sql"insert into asset_balances (address, asset_id, balance, height) values (?,?,?,?)"
       .batch(assetBalanceParams.toSeq: _*)
       .apply()
@@ -301,13 +304,12 @@ class PostgresWriter(ds: DataSource) extends StateReader with StateWriter {
     sql"insert into lease_info (lease_id, sender, recipient, amount, height) values (?,?,?,?,?)"
       .batch(blockDiff.txsDiff.transactions.collect {
         case (_, (_, lt: LeaseTransaction, _)) =>
-          Seq(lt.id.arr, lt.sender.publicKey,
-            lt.recipient.bytes.arr, lt.amount, newHeight)
+          Seq(lt.id.arr, lt.sender.publicKey, lt.recipient.stringRepr, lt.amount, newHeight)
       }.toSeq: _*)
       .apply()
   }
 
-  private def storeFilledQuantity(blockDiff: BlockDiff, newHeight: Int)(implicit session: DBSession) = {
+  private def storeFilledQuantity(blockDiff: BlockDiff, newHeight: Int)(implicit session: DBSession) =
     sql"""insert into filled_quantity(order_id, filled_quantity, fee, height)
          |select order_id, filled_quantity + ?, fee + ?, ? from (
          |(select * from filled_quantity where order_id = ? order by height desc limit 1)
@@ -315,26 +317,20 @@ class PostgresWriter(ds: DataSource) extends StateReader with StateWriter {
          |(select ?, 0, 0, 0)
          |) as latest_filled_quantity order by height desc limit 1""".stripMargin
       .batch((for {
-        (orderId, fillInfo) <-
-        blockDiff.txsDiff.orderFills
+        (orderId, fillInfo) <- blockDiff.txsDiff.orderFills
       } yield Seq(fillInfo.volume, fillInfo.fee, newHeight, orderId.arr, orderId.arr)).toSeq: _*)
       .apply()
-  }
 
   private def storeReissuedAssets(blockDiff: BlockDiff, newHeight: Int)(implicit session: DBSession) = {
     sql"""insert into asset_quantity
          |with this_asset as (select ? asset_id)
-         |select ta.asset_id, coalesce(aq.quantity, 0) + ?, ?, ?
+         |select ta.asset_id, coalesce(aq.total_quantity, 0) + ?, ?, ?
          |from this_asset ta
          |left join asset_quantity aq on ta.asset_id = aq.asset_id
          |order by aq.height desc
          |limit 1""".stripMargin
       .batch(blockDiff.
-        txsDiff.issuedAssets.map {
-        case (id, ai) => Seq(id.arr,
-          ai.volume, ai.
-            isReissuable, newHeight)
-      }.toSeq: _*)
+        txsDiff.issuedAssets.map { case (id, ai) => Seq(id.arr, ai.volume, ai.isReissuable, newHeight) }.toSeq: _*)
       .apply()
   }
 
@@ -353,21 +349,24 @@ class PostgresWriter(ds: DataSource) extends StateReader with StateWriter {
     }
   }
 
-  private def storeBlocks(block: Block, newHeight: Int)(implicit session: DBSession): Unit = {
+  private def storeBlocks(block: Block, newHeight: Int)(implicit session: DBSession): Unit =
     sql"""insert into blocks (height, block_id, block_timestamp, generator_address, block_data_bytes)
          |values (?,?,?,?,?)""".stripMargin
       .bind(newHeight, block.uniqueId.arr, new Timestamp(block.timestamp),
-        block.signerData.generator.toAddress.bytes.arr, block.bytes)
+        block.signerData.generator.toAddress.stringRepr, block.bytes)
       .update()
       .apply()
-  }
 
   private def storeTransactions(blockDiff: BlockDiff, newHeight: Int)(implicit session: DBSession) = {
-    sql"insert into transaction_offsets (tx_id, signature, tx_type, start_offset, height) values (?,?,?::tx_type_id_type,?,?)"
+    sql"""insert into transactions (tx_id, signature, tx_type, tx_json, height)
+         |values (?,?,?::tx_type_id_type,?::json,?)""".stripMargin
       .batch(blockDiff.txsDiff.transactions.values.map {
-        case (_, pt: PaymentTransaction, _) => Seq(pt.hash, pt.signature.arr, transactionTypes(pt.transactionType.id - 1), 0, newHeight)
-        case (_, t: SignedTransaction, _) => Seq(t.id.arr, t.signature.arr, transactionTypes(t.transactionType.id - 1), 0, newHeight)
-        case (_, gt: GenesisTransaction, _) => Seq(gt.id.arr, gt.signature.arr, transactionTypes(gt.transactionType.id - 1), 0, newHeight)
+        case (_, pt: PaymentTransaction, _) =>
+          Seq(pt.hash, pt.signature.arr, transactionTypes(pt.transactionType.id - 1), pt.json.toString(), newHeight)
+        case (_, t: SignedTransaction, _) =>
+          Seq(t.id.arr, t.signature.arr, transactionTypes(t.transactionType.id - 1), t.json.toString(), newHeight)
+        case (_, gt: GenesisTransaction, _) =>
+          Seq(gt.id.arr, gt.signature.arr, transactionTypes(gt.transactionType.id - 1), gt.json.toString(), newHeight)
       }.toSeq: _*)
       .apply()
   }

@@ -1,12 +1,22 @@
 begin;
 
 create domain public_key_type as bytea not null;
-create domain address_type as bytea not null;
 create domain digest_type as bytea not null;
 create domain signature_type as bytea not null;
 create domain amount_type as bigint not null check (value >= 0);
 create domain height_type as int not null check (value > 0);
-create domain asset_quantity_type as decimal(50,2) not null check (value >= 0);
+
+create domain address_type as text not null check (
+    value ~ '^[1-9A-HJ-NP-Za-km-z]{35,36}$' or
+    value ~ '^address:[1-9A-HJ-NP-Za-km-z]{35,36}$'
+);
+
+create domain address_or_alias as text not null check (
+    value ~ '^[1-9A-HJ-NP-Za-km-z]{35,36}$' or
+    value ~ '^address:[1-9A-HJ-NP-Za-km-z]{35,36}$' or
+    value ~ '^alias:[A-Z]:[0-9a-z@_.-]{4,30}$'
+);
+
 create type tx_type_id_type as enum(
     'genesis',
     'payment',
@@ -49,14 +59,14 @@ create table asset_info (
 
 create table asset_quantity (
     asset_id digest_type references asset_info(asset_id) on delete cascade,
-    quantity asset_quantity_type,
+    total_quantity numeric not null,
     reissuable boolean not null,
     height height_type references blocks(height) on delete cascade,
     primary key (asset_id, height)
 );
 
 create table asset_balances (
-    address public_key_type,
+    address address_type,
     asset_id digest_type references asset_info(asset_id) on delete cascade,
     balance amount_type,
     height height_type references blocks(height) on delete cascade,
@@ -66,7 +76,7 @@ create table asset_balances (
 create table lease_info (
     lease_id digest_type primary key,
     sender public_key_type,
-    recipient public_key_type,
+    recipient address_or_alias,
     amount amount_type,
     height height_type references blocks(height) on delete cascade
 );
@@ -102,7 +112,16 @@ create table transaction_offsets (
     tx_id digest_type,
     signature signature_type,
     tx_type tx_type_id_type not null,
-    start_offset int not null,
+    height height_type references blocks(height) on delete cascade,
+
+    primary key (tx_id, signature)
+);
+
+create table transactions (
+    tx_id digest_type,
+    signature signature_type,
+    tx_type tx_type_id_type not null,
+    tx_json json not null,
     height height_type references blocks(height) on delete cascade,
 
     primary key (tx_id, signature)
@@ -114,7 +133,7 @@ create table address_transaction_ids (
     signature signature_type,
     height height_type references blocks(height) on delete cascade,
 
-    foreign key (tx_id, signature) references transaction_offsets(tx_id, signature) on delete cascade
+    foreign key (tx_id, signature) references transactions(tx_id, signature) on delete cascade
 );
 
 create table payment_transactions (

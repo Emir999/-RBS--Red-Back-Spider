@@ -22,8 +22,6 @@ class StateReaderImpl(p: StateStorage) extends StateReader {
 
   override def accountPortfolio(a: Address): Portfolio = ???
 
-  override def assetInfo(id: ByteStr): Option[AssetInfo] = ???
-
   override def assetDescription(id: ByteStr) = ???
 
   override def height: Int = { p.getHeight }

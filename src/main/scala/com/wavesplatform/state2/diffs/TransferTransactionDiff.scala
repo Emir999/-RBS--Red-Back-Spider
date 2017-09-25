@@ -35,11 +35,11 @@ object TransferTransactionDiff {
       )
       assetIssued = tx.assetId match {
         case None => true
-        case Some(aid) => state.assetInfo(aid).isDefined
+        case Some(aid) => state.assetDescription(aid).isDefined
       }
       feeAssetIssued = tx.feeAssetId match {
         case None => true
-        case Some(aid) => state.assetInfo(aid).isDefined
+        case Some(aid) => state.assetDescription(aid).isDefined
       }
     } yield (portfolios, blockTime > s.allowUnissuedAssetsUntil && !(assetIssued && feeAssetIssued))
 
