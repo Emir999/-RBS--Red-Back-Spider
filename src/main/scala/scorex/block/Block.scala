@@ -201,6 +201,7 @@ object Block extends ScorexLogging {
 
     val timestamp = genesisSettings.blockTimestamp
 
+    // todo create one generator for genesis block
     val genesisSignerPair = Wallet.kg.generateKeyPair()
 
     val genesisSigner = genesisSignerPair.getPublic.getEncoded
