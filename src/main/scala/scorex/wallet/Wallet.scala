@@ -48,6 +48,7 @@ class Wallet (file: Option[File], password: Array[Char]) extends AutoCloseable w
 
   def privateKeyAccounts(): Seq[PrivateKeyAccount] = {
     for {
+      // todo filter by waves prefix
       alias <- keyStore.aliases().asScala.toSeq
     } yield {
       val key = keyStore.getKey(alias, password)
