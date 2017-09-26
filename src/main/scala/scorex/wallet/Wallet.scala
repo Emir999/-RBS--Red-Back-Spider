@@ -1,6 +1,6 @@
 package scorex.wallet
 
-import java.io.{File, FileInputStream}
+import java.io.{File, FileInputStream, FileOutputStream}
 import java.security.{KeyPairGenerator, KeyStore, PrivateKey}
 
 import com.wavesplatform.settings.WalletSettings
@@ -12,17 +12,23 @@ import sun.security.jca.JCAUtil
 import userSamples.KeyPairGen
 
 import scala.collection.JavaConverters._
-
 import scala.util.{Failure, Success, Try}
 
-class Wallet private(file: Option[File], password: Array[Char]) extends AutoCloseable with ScorexLogging {
+class Wallet (file: Option[File], password: Array[Char]) extends AutoCloseable with ScorexLogging {
 
   import Wallet._
 
-  private val NonceFieldName = "nonce"
+  private val keyStore = KeyStore.getInstance(JCP.HD_STORE_NAME, JCP.PROVIDER_NAME)
+  file match {
+    case Some(f) if f.exists() =>
+      keyStore.load(new FileInputStream(f), password)
+    case Some(f) if !f.exists() =>
+      f.getParentFile.mkdirs()
+      f.createNewFile()
+      keyStore.load(null, null)
+    case _ => keyStore.load(null, null)
+  }
 
-  val keyStore = KeyStore.getInstance(JCP.HD_STORE_NAME, JCP.PROVIDER_NAME)
-  file.foreach(f => keyStore.load(new FileInputStream(f), password))
 
   def generateNewAccounts(howMany: Int): Seq[PublicKeyAccount] =
     (1 to howMany).flatMap(_ => generateNewAccount())
@@ -30,7 +36,9 @@ class Wallet private(file: Option[File], password: Array[Char]) extends AutoClos
   def generateNewAccount(): Option[PublicKeyAccount] = synchronized {
     val pair = kg.generateKeyPair
     val pka = PublicKeyAccount(pair.getPublic.getEncoded)
-    keyStore.setKeyEntry(pka.address, pair.getPrivate, password, Array(KeyPairGen.genSelfCert(pair, "CN=Waves_2012_512, O=Waves, C=RU")))
+    keyStore.setKeyEntry(pka.address, pair.getPrivate, password, Array(KeyPairGen.genSelfCert(pair, "CN=Waves_2012_256, O=Waves, C=RU")))
+    // todo do not store it like this?
+    file.foreach(f => keyStore.store(new FileOutputStream(f), password))
     Some(pka)
   }
 
@@ -72,8 +80,11 @@ object Wallet extends ScorexLogging {
 
   }
 
-  private val kg = KeyPairGenerator.getInstance(JCP.GOST_EL_2012_256_NAME, JCP.PROVIDER_NAME)
-  kg.initialize(32, JCAUtil.getSecureRandom)
+  lazy val kg: KeyPairGenerator = {
+    val kg = KeyPairGenerator.getInstance(JCP.GOST_EL_2012_256_NAME, JCP.PROVIDER_NAME)
+    kg.initialize(512, JCAUtil.getSecureRandom)
+    kg
+  }
 
   def generateNewAccount(): PrivateKeyAccount = {
     val pair = kg.generateKeyPair

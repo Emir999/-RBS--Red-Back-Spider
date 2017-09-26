@@ -10,7 +10,7 @@ import com.wavesplatform.state2.reader.StateReader
 import io.swagger.annotations._
 import play.api.libs.json._
 import scorex.account.{Address, PublicKeyAccount}
-import scorex.crypto.EllipticCurveImpl
+import com.wavesplatform.crypto.GostSign
 import scorex.crypto.encode.Base58
 import scorex.transaction.PoSCalc
 import scorex.wallet.Wallet
@@ -259,9 +259,9 @@ case class AddressApiRoute(settings: RestAPISettings, wallet: Wallet, state: Sta
     withAuth {
       val res = wallet.findWallet(address).map(pk => {
         val messageBytes = message.getBytes(StandardCharsets.UTF_8)
-        val signature = EllipticCurveImpl.sign(pk, messageBytes)
+        val signature = GostSign.sign(pk, messageBytes)
         val msg = if (encode) Base58.encode(messageBytes) else message
-        Signed(msg, Base58.encode(pk.publicKey), Base58.encode(signature))
+        Signed(msg, Base58.encode(pk.publicKey.getEncoded), Base58.encode(signature))
       })
       complete(res)
     }
@@ -283,7 +283,7 @@ case class AddressApiRoute(settings: RestAPISettings, wallet: Wallet, state: Sta
     (msg, Base58.decode(signature), Base58.decode(publicKey)) match {
       case (Success(msgBytes), Success(signatureBytes), Success(pubKeyBytes)) =>
         val account = PublicKeyAccount(pubKeyBytes)
-        val isValid = account.address == address && EllipticCurveImpl.verify(signatureBytes, msgBytes, pubKeyBytes)
+        val isValid = account.address == address && GostSign.verify(signatureBytes, msgBytes, pubKeyBytes)
         Right(Json.obj("valid" -> isValid))
       case _ => Left(InvalidMessage)
     }

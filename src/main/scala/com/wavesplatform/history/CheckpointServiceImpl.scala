@@ -5,7 +5,7 @@ import java.io.File
 import com.wavesplatform.network.{BlockCheckpoint, Checkpoint}
 import com.wavesplatform.settings.CheckpointsSettings
 import com.wavesplatform.utils.createMVStore
-import scorex.crypto.EllipticCurveImpl
+import com.wavesplatform.crypto.GostSign
 import scorex.transaction.ValidationError.GenericError
 import scorex.transaction.{CheckpointService, ValidationError}
 import scorex.utils.LogMVMapBuilder
@@ -21,7 +21,7 @@ class CheckpointServiceImpl(fileName: Option[File], settings: CheckpointsSetting
 
   override def set(cp: Checkpoint): Either[ValidationError, Unit] = for {
     _ <- Either.cond(!get.forall(_.signature sameElements cp.signature), (), GenericError("Checkpoint already applied"))
-    _ <- Either.cond(EllipticCurveImpl.verify(cp.signature, cp.toSign, settings.publicKey.arr),
+    _ <- Either.cond(GostSign.verify(cp.signature, cp.toSign, settings.publicKey.arr),
       checkpoint.put(key, (cp.items.map(bcp => (bcp.height, bcp.signature)), cp.signature)),
       GenericError("Invalid checkpoint signature"))
   } yield db.commit()

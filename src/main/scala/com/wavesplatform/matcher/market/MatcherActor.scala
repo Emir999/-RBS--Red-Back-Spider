@@ -112,7 +112,7 @@ class MatcherActor(orderHistory: ActorRef, storedState: StateReader, wallet: Wal
   }
 
   def getMatcherPublicKey: Array[Byte] = {
-    wallet.findWallet(settings.account).map(_.publicKey).getOrElse(Array())
+    wallet.findWallet(settings.account).map(_.publicKey.getEncoded).getOrElse(Array())
   }
 
   def forwardToOrderBook: Receive = {

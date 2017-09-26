@@ -4,7 +4,7 @@ import com.google.common.primitives.{Bytes, Longs}
 import com.wavesplatform.state2.ByteStr
 import play.api.libs.json.{JsObject, Json}
 import scorex.account._
-import scorex.crypto.EllipticCurveImpl
+import com.wavesplatform.crypto.GostSign
 import scorex.crypto.hash.FastCryptographicHash
 import scorex.serialization.{BytesSerializable, Deser}
 import scorex.transaction.TransactionParser._
@@ -25,7 +25,7 @@ case class CreateAliasTransaction private(sender: PublicKeyAccount,
 
   lazy val toSign: Array[Byte] = Bytes.concat(
     Array(transactionType.id.toByte),
-    sender.publicKey,
+    sender.publicKey.getEncoded,
     BytesSerializable.arrayWithSize(alias.bytes.arr),
     Longs.toByteArray(fee),
     Longs.toByteArray(timestamp))
@@ -44,7 +44,6 @@ case class CreateAliasTransaction private(sender: PublicKeyAccount,
 object CreateAliasTransaction {
 
   def parseTail(bytes: Array[Byte]): Try[CreateAliasTransaction] = Try {
-    import EllipticCurveImpl._
     val sender = PublicKeyAccount(bytes.slice(0, KeyLength))
     val (aliasBytes, aliasEnd) = Deser.parseArraySize(bytes, KeyLength)
     (for {
@@ -72,7 +71,7 @@ object CreateAliasTransaction {
              fee: Long,
              timestamp: Long): Either[ValidationError, CreateAliasTransaction] = {
     create(sender, alias, fee, timestamp, ByteStr.empty).right.map { unsigned =>
-      unsigned.copy(signature = ByteStr(EllipticCurveImpl.sign(sender, unsigned.toSign)))
+      unsigned.copy(signature = ByteStr(GostSign.sign(sender, unsigned.toSign)))
     }
   }
 }

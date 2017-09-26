@@ -5,7 +5,7 @@ import play.api.libs.functional.syntax._
 import play.api.libs.json.Reads._
 import play.api.libs.json.{JsObject, JsPath, Json, Reads}
 import scorex.account.{PrivateKeyAccount, PublicKeyAccount}
-import scorex.crypto.EllipticCurveImpl
+import com.wavesplatform.crypto.GostSign
 import scorex.crypto.encode.Base58
 import scorex.transaction.assets.exchange.OrderJson._
 
@@ -13,13 +13,13 @@ case class CancelOrderRequest(@ApiModelProperty(dataType = "java.lang.String") s
                               @ApiModelProperty(dataType = "java.lang.String") orderId: Array[Byte],
                               @ApiModelProperty(dataType = "java.lang.String") signature: Array[Byte]) {
   @ApiModelProperty(hidden = true)
-  lazy val toSign: Array[Byte] = senderPublicKey.publicKey ++ orderId
+  lazy val toSign: Array[Byte] = senderPublicKey.publicKey.getEncoded ++ orderId
 
   @ApiModelProperty(hidden = true)
-  def isSignatureValid = EllipticCurveImpl.verify(signature, toSign, senderPublicKey.publicKey)
+  def isSignatureValid = GostSign.verify(signature, toSign, senderPublicKey.publicKey)
 
   def json: JsObject = Json.obj(
-    "sender" -> Base58.encode(senderPublicKey.publicKey),
+    "sender" -> Base58.encode(senderPublicKey.publicKey.getEncoded),
     "orderId" -> Base58.encode(orderId),
     "signature" -> Base58.encode(signature)
   )
@@ -34,7 +34,7 @@ object CancelOrderRequest {
   }
 
   def sign(unsigned: CancelOrderRequest, sender: PrivateKeyAccount): CancelOrderRequest = {
-    val sig = EllipticCurveImpl.sign(sender, unsigned.toSign)
+    val sig = GostSign.sign(sender, unsigned.toSign)
     unsigned.copy(signature = sig)
   }
 }

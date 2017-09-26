@@ -4,8 +4,7 @@ import com.google.common.primitives.{Bytes, Longs}
 import com.wavesplatform.state2.ByteStr
 import play.api.libs.json.{JsObject, Json}
 import scorex.account.{PrivateKeyAccount, PublicKeyAccount}
-import scorex.crypto.EllipticCurveImpl
-import scorex.crypto.EllipticCurveImpl.SignatureLength
+import com.wavesplatform.crypto.GostSign
 import scorex.crypto.hash.FastCryptographicHash.DigestSize
 import scorex.transaction.TransactionParser.{KeyLength, _}
 import scorex.transaction._
@@ -22,7 +21,7 @@ case class LeaseCancelTransaction private(sender: PublicKeyAccount,
   override val transactionType: TransactionType.Value = TransactionType.LeaseCancelTransaction
 
   lazy val toSign: Array[Byte] = Bytes.concat(Array(transactionType.id.toByte),
-    sender.publicKey,
+    sender.publicKey.getEncoded,
     Longs.toByteArray(fee),
     Longs.toByteArray(timestamp),
     leaseId.arr)
@@ -69,7 +68,7 @@ object LeaseCancelTransaction {
              fee: Long,
              timestamp: Long): Either[ValidationError, LeaseCancelTransaction] = {
     create(sender, leaseId, fee, timestamp, ByteStr.empty).right.map { unsigned =>
-      unsigned.copy(signature = ByteStr(EllipticCurveImpl.sign(sender, unsigned.toSign)))
+      unsigned.copy(signature = ByteStr(GostSign.sign(sender, unsigned.toSign)))
     }
   }
 }

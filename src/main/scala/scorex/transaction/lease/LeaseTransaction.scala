@@ -4,7 +4,7 @@ import com.google.common.primitives.{Bytes, Longs}
 import com.wavesplatform.state2.ByteStr
 import play.api.libs.json.{JsObject, Json}
 import scorex.account.{AddressOrAlias, Address, PrivateKeyAccount, PublicKeyAccount}
-import scorex.crypto.EllipticCurveImpl
+import com.wavesplatform.crypto.GostSign
 import scorex.transaction.TransactionParser._
 import scorex.transaction._
 
@@ -21,7 +21,7 @@ case class LeaseTransaction private(sender: PublicKeyAccount,
   override val transactionType: TransactionType.Value = TransactionType.LeaseTransaction
 
   lazy val toSign: Array[Byte] = Bytes.concat(Array(transactionType.id.toByte),
-    sender.publicKey,
+    sender.publicKey.getEncoded,
     recipient.bytes.arr,
     Longs.toByteArray(amount),
     Longs.toByteArray(fee),
@@ -42,7 +42,6 @@ case class LeaseTransaction private(sender: PublicKeyAccount,
 object LeaseTransaction {
 
   def parseTail(bytes: Array[Byte]): Try[LeaseTransaction] = Try {
-    import EllipticCurveImpl._
     val sender = PublicKeyAccount(bytes.slice(0, KeyLength))
     (for {
       recRes <- AddressOrAlias.fromBytes(bytes, KeyLength)
@@ -81,7 +80,7 @@ object LeaseTransaction {
              timestamp: Long,
              recipient: AddressOrAlias): Either[ValidationError, LeaseTransaction] = {
     create(sender, amount, fee, timestamp, recipient, ByteStr.empty).right.map { unsigned =>
-      unsigned.copy(signature = ByteStr(EllipticCurveImpl.sign(sender, unsigned.toSign)))
+      unsigned.copy(signature = ByteStr(GostSign.sign(sender, unsigned.toSign)))
     }
   }
 }

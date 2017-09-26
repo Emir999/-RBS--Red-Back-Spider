@@ -4,7 +4,7 @@ import com.google.common.primitives.{Bytes, Longs}
 import com.wavesplatform.state2.ByteStr
 import play.api.libs.json.{JsObject, Json}
 import scorex.account.{PrivateKeyAccount, PublicKeyAccount}
-import scorex.crypto.EllipticCurveImpl
+import com.wavesplatform.crypto.GostSign
 import scorex.transaction.TransactionParser._
 import scorex.transaction.{ValidationError, _}
 
@@ -22,7 +22,7 @@ case class ReissueTransaction private(sender: PublicKeyAccount,
   override val transactionType: TransactionType.Value = TransactionType.ReissueTransaction
 
   lazy val toSign: Array[Byte] = Bytes.concat(Array(transactionType.id.toByte),
-    sender.publicKey,
+    sender.publicKey.getEncoded,
     assetId.arr,
     Longs.toByteArray(quantity),
     if (reissuable) Array(1: Byte) else Array(0: Byte),
@@ -42,7 +42,6 @@ case class ReissueTransaction private(sender: PublicKeyAccount,
 
 object ReissueTransaction {
   def parseTail(bytes: Array[Byte]): Try[ReissueTransaction] = Try {
-    import EllipticCurveImpl._
     val signature =ByteStr(bytes.slice(0, SignatureLength))
     val txId = bytes(SignatureLength)
     require(txId == TransactionType.ReissueTransaction.id.toByte, s"Signed tx id is not match")
@@ -80,6 +79,6 @@ object ReissueTransaction {
              fee: Long,
              timestamp: Long): Either[ValidationError, ReissueTransaction] =
     create(sender, assetId, quantity, reissuable, fee, timestamp, ByteStr.empty).right.map { unsigned =>
-      unsigned.copy(signature = ByteStr(EllipticCurveImpl.sign(sender, unsigned.toSign)))
+      unsigned.copy(signature = ByteStr(GostSign.sign(sender, unsigned.toSign)))
     }
 }

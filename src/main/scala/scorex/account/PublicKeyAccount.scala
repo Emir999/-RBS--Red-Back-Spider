@@ -1,5 +1,9 @@
 package scorex.account
 
+import java.security.PublicKey
+
+import com.objsys.asn1j.runtime.Asn1BerEncodeBuffer
+import ru.CryptoPro.JCP.Key.GostPublicKey
 import scorex.crypto.encode.Base58
 import scorex.transaction.ValidationError.InvalidAddress
 import scorex.transaction.{TransactionParser, ValidationError}
@@ -8,10 +12,10 @@ import scala.language.implicitConversions
 
 
 trait PublicKeyAccount {
-  def publicKey: Array[Byte]
+  def publicKey: PublicKey
 
   override def equals(b: Any): Boolean = b match {
-    case a: PublicKeyAccount => publicKey.sameElements(a.publicKey)
+    case a: PublicKeyAccount => publicKey.equals(a.publicKey)
     case _ => false
   }
 
@@ -22,11 +26,11 @@ trait PublicKeyAccount {
 
 object PublicKeyAccount {
 
-  private case class PublicKeyAccountImpl(publicKey: Array[Byte]) extends PublicKeyAccount
+  private case class PublicKeyAccountImpl(publicKey: PublicKey) extends PublicKeyAccount
 
-  def apply(publicKey: Array[Byte]): PublicKeyAccount = PublicKeyAccountImpl(publicKey)
+  def apply(publicKey: Array[Byte]): PublicKeyAccount = {PublicKeyAccountImpl(new GostPublicKey(publicKey))}
 
-  implicit def toAddress(publicKeyAccount: PublicKeyAccount): Address = Address.fromPublicKey(publicKeyAccount.publicKey)
+  implicit def toAddress(publicKeyAccount: PublicKeyAccount): Address = Address.fromPublicKey(publicKeyAccount.publicKey.getEncoded)
 
   implicit class PublicKeyAccountExt(pk: PublicKeyAccount) {
     def toAddress: Address = PublicKeyAccount.toAddress(pk)

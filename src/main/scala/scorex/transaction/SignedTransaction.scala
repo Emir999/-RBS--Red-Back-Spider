@@ -3,7 +3,7 @@ package scorex.transaction
 import com.wavesplatform.state2.ByteStr
 import play.api.libs.json.{JsObject, Json}
 import scorex.account.PublicKeyAccount
-import scorex.crypto.EllipticCurveImpl
+import com.wavesplatform.crypto.GostSign
 import scorex.crypto.encode.Base58
 import scorex.crypto.hash.FastCryptographicHash
 
@@ -17,11 +17,11 @@ trait SignedTransaction extends Transaction with Signed {
   protected def jsonBase(): JsObject = Json.obj("type" -> transactionType.id,
     "id" -> id.base58,
     "sender" -> sender.address,
-    "senderPublicKey" -> Base58.encode(sender.publicKey),
+    "senderPublicKey" -> Base58.encode(sender.publicKey.getEncoded),
     "fee" -> assetFee._2,
     "timestamp" -> timestamp,
     "signature" -> this.signature.base58
   )
 
-  lazy val signatureValid : Boolean = EllipticCurveImpl.verify(signature.arr, toSign, sender.publicKey)
+  lazy val signatureValid : Boolean = GostSign.verify(signature.arr, toSign, sender.publicKey)
 }

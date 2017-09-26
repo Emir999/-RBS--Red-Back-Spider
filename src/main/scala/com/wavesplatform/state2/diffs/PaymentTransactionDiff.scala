@@ -24,7 +24,7 @@ object PaymentTransactionDiff {
             balance = tx.amount,
             LeaseInfo.empty,
             assets = Map.empty)) combine Map(
-          Address.fromPublicKey(tx.sender.publicKey) -> Portfolio(
+          Address.fromPublicKey(tx.sender.publicKey.getEncoded) -> Portfolio(
             balance = -tx.amount - tx.fee,
             LeaseInfo.empty,
             assets = Map.empty

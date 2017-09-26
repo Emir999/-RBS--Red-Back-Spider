@@ -13,7 +13,7 @@ import scala.util.Right
 
 object TransferTransactionDiff {
   def apply(state: StateReader, s: FunctionalitySettings, blockTime: Long, height: Int)(tx: TransferTransaction): Either[ValidationError, Diff] = {
-    val sender = Address.fromPublicKey(tx.sender.publicKey)
+    val sender = Address.fromPublicKey(tx.sender.publicKey.getEncoded)
 
     val isInvalidEi = for {
       recipient <- state.resolveAliasEi(tx.recipient)

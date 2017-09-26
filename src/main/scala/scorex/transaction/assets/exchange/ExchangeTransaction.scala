@@ -5,7 +5,7 @@ import com.wavesplatform.state2.ByteStr
 import io.swagger.annotations.ApiModelProperty
 import play.api.libs.json.{JsObject, Json}
 import scorex.account.{PrivateKeyAccount, PublicKeyAccount}
-import scorex.crypto.EllipticCurveImpl
+import com.wavesplatform.crypto.GostSign
 import scorex.transaction.TransactionParser.TransactionType
 import scorex.transaction.ValidationError.{GenericError, OrderValidationError}
 import scorex.transaction.{ValidationError, _}
@@ -47,7 +47,7 @@ object ExchangeTransaction {
   def create(matcher: PrivateKeyAccount, buyOrder: Order, sellOrder: Order, price: Long, amount: Long,
              buyMatcherFee: Long, sellMatcherFee: Long, fee: Long, timestamp: Long): Either[ValidationError, ExchangeTransaction] = {
     create(buyOrder, sellOrder, price, amount, buyMatcherFee, sellMatcherFee, fee, timestamp, ByteStr.empty).right.map { unverified =>
-      unverified.copy(signature = ByteStr(EllipticCurveImpl.sign(matcher, unverified.toSign)))
+      unverified.copy(signature = ByteStr(GostSign.sign(matcher, unverified.toSign)))
     }
   }
 

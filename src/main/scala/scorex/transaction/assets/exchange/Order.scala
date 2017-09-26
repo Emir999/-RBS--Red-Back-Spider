@@ -5,7 +5,7 @@ import com.wavesplatform.state2.ByteStr
 import io.swagger.annotations.ApiModelProperty
 import play.api.libs.json.{JsObject, Json}
 import scorex.account.{PrivateKeyAccount, PublicKeyAccount}
-import scorex.crypto.EllipticCurveImpl
+import com.wavesplatform.crypto.GostSign
 import scorex.crypto.encode.Base58
 import scorex.crypto.hash.FastCryptographicHash
 import scorex.serialization.{BytesSerializable, Deser, JsonSerializable}
@@ -72,7 +72,7 @@ case class Order(@ApiModelProperty(dataType = "java.lang.String") senderPublicKe
   import Order._
 
   @ApiModelProperty(hidden = true)
-  lazy val signatureValid: Boolean = EllipticCurveImpl.verify(signature, toSign, senderPublicKey.publicKey)
+  lazy val signatureValid: Boolean = GostSign.verify(signature, toSign, senderPublicKey.publicKey)
 
   def isValid(atTime: Long): Validation = {
     isValidAmount(price, amount) &&
@@ -95,7 +95,7 @@ case class Order(@ApiModelProperty(dataType = "java.lang.String") senderPublicKe
   }
 
   @ApiModelProperty(hidden = true)
-  lazy val toSign: Array[Byte] = senderPublicKey.publicKey ++ matcherPublicKey.publicKey ++
+  lazy val toSign: Array[Byte] = senderPublicKey.publicKey.getEncoded ++ matcherPublicKey.publicKey.getEncoded ++
     assetPair.bytes ++ orderType.bytes ++
     Longs.toByteArray(price) ++ Longs.toByteArray(amount) ++
     Longs.toByteArray(timestamp) ++ Longs.toByteArray(expiration) ++
@@ -143,8 +143,8 @@ case class Order(@ApiModelProperty(dataType = "java.lang.String") senderPublicKe
 
   override def json: JsObject = Json.obj(
     "id" -> Base58.encode(id),
-    "senderPublicKey" -> Base58.encode(senderPublicKey.publicKey),
-    "matcherPublicKey" -> Base58.encode(matcherPublicKey.publicKey),
+    "senderPublicKey" -> Base58.encode(senderPublicKey.publicKey.getEncoded),
+    "matcherPublicKey" -> Base58.encode(matcherPublicKey.publicKey.getEncoded),
     "assetPair" -> assetPair.json,
     "orderType" -> orderType.toString,
     "price" -> price,
@@ -188,26 +188,25 @@ object Order {
   def buy(sender: PrivateKeyAccount, matcher: PublicKeyAccount, pair: AssetPair,
           price: Long, amount: Long, timestamp: Long, expiration: Long, matcherFee: Long): Order = {
     val unsigned = Order(sender, matcher, pair, OrderType.BUY, price, amount, timestamp, expiration, matcherFee, Array())
-    val sig = EllipticCurveImpl.sign(sender, unsigned.toSign)
+    val sig = GostSign.sign(sender, unsigned.toSign)
     unsigned.copy(signature = sig)
   }
 
   def sell(sender: PrivateKeyAccount, matcher: PublicKeyAccount, pair: AssetPair,
            price: Long, amount: Long, timestamp: Long, expiration: Long, matcherFee: Long): Order = {
     val unsigned = Order(sender, matcher, pair, OrderType.SELL, price, amount, timestamp, expiration, matcherFee, Array())
-    val sig = EllipticCurveImpl.sign(sender, unsigned.toSign)
+    val sig = GostSign.sign(sender, unsigned.toSign)
     unsigned.copy(signature = sig)
   }
 
   def apply(sender: PrivateKeyAccount, matcher: PublicKeyAccount, pair: AssetPair, orderType: OrderType,
             price: Long, amount: Long, timestamp: Long, expiration: Long, matcherFee: Long): Order = {
     val unsigned = Order(sender, matcher, pair, orderType, price, amount, timestamp, expiration, matcherFee, Array())
-    val sig = EllipticCurveImpl.sign(sender, unsigned.toSign)
+    val sig = GostSign.sign(sender, unsigned.toSign)
     unsigned.copy(signature = sig)
   }
 
   def parseBytes(bytes: Array[Byte]): Try[Order] = Try {
-    import EllipticCurveImpl._
     var from = 0
     val sender = PublicKeyAccount(bytes.slice(from, from + KeyLength))
     from += KeyLength
@@ -236,7 +235,7 @@ object Order {
 
   def sign(unsigned: Order, sender: PrivateKeyAccount): Order = {
     require(unsigned.senderPublicKey == sender)
-    val sig = EllipticCurveImpl.sign(sender, unsigned.toSign)
+    val sig = GostSign.sign(sender, unsigned.toSign)
     unsigned.copy(signature = sig)
   }
 

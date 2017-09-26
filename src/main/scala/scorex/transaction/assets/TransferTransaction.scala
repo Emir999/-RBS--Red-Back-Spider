@@ -5,7 +5,7 @@ import com.wavesplatform.state2.ByteStr
 import com.wavesplatform.utils.base58Length
 import play.api.libs.json.{JsObject, Json}
 import scorex.account.{AddressOrAlias, PrivateKeyAccount, PublicKeyAccount}
-import scorex.crypto.EllipticCurveImpl
+import com.wavesplatform.crypto.GostSign
 import scorex.crypto.encode.Base58
 import scorex.serialization.{BytesSerializable, Deser}
 import scorex.transaction.TransactionParser._
@@ -35,7 +35,7 @@ case class TransferTransaction private(assetId: Option[AssetId],
     val feeBytes = Longs.toByteArray(fee)
 
     Bytes.concat(Array(transactionType.id.toByte),
-      sender.publicKey,
+      sender.publicKey.getEncoded,
       assetIdBytes,
       feeAssetIdBytes,
       timestampBytes,
@@ -65,8 +65,6 @@ object TransferTransaction {
 
 
   def parseTail(bytes: Array[Byte]): Try[TransferTransaction] = Try {
-    import EllipticCurveImpl._
-
     val signature = ByteStr(bytes.slice(0, SignatureLength))
     val txId = bytes(SignatureLength)
     require(txId == TransactionType.TransferTransaction.id.toByte, s"Signed tx id is not match")
@@ -116,7 +114,7 @@ object TransferTransaction {
              feeAmount: Long,
              attachment: Array[Byte]): Either[ValidationError, TransferTransaction] = {
     create(assetId, sender, recipient, amount, timestamp, feeAssetId, feeAmount, attachment, ByteStr.empty).right.map { unsigned =>
-      unsigned.copy(signature = ByteStr(EllipticCurveImpl.sign(sender, unsigned.toSign)))
+      unsigned.copy(signature = ByteStr(GostSign.sign(sender, unsigned.toSign)))
     }
   }
 }

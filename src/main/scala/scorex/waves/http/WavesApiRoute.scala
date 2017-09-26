@@ -54,7 +54,7 @@ case class WavesApiRoute(settings: RestAPISettings, wallet: Wallet, utx: UtxPool
           f.map { t =>
             val tx = t.asInstanceOf[PaymentTransaction]
             SignedPaymentRequest(tx.timestamp, tx.amount, tx.fee, tx.recipient.address,
-              Base58.encode(tx.sender.publicKey), tx.sender.address, tx.signature.base58)
+              Base58.encode(tx.sender.publicKey.getEncoded), tx.sender.address, tx.signature.base58)
           }
         }
       }
@@ -88,7 +88,7 @@ case class WavesApiRoute(settings: RestAPISettings, wallet: Wallet, utx: UtxPool
       } yield pt)
         .left.map(ApiError.fromValidationError)
         .map { t =>
-          SignedPaymentRequest(t.timestamp, t.amount, t.fee, t.recipient.address, Base58.encode(t.sender.publicKey), t.sender.address, t.signature.base58)
+          SignedPaymentRequest(t.timestamp, t.amount, t.fee, t.recipient.address, Base58.encode(t.sender.publicKey.getEncoded), t.sender.address, t.signature.base58)
         }
     }
   }
@@ -120,7 +120,7 @@ case class WavesApiRoute(settings: RestAPISettings, wallet: Wallet, utx: UtxPool
           recipientAccount <- Address.fromString(payment.recipient).left.map(ApiError.fromValidationError)
           _tx <- PaymentTransaction.create(senderAccount, recipientAccount, payment.amount, payment.fee, payment.timestamp)
             .left.map(ApiError.fromValidationError)
-        } yield SignedPaymentRequest(_tx.timestamp, _tx.amount, _tx.fee, _tx.recipient.address, Base58.encode(_tx.sender.publicKey),
+        } yield SignedPaymentRequest(_tx.timestamp, _tx.amount, _tx.fee, _tx.recipient.address, Base58.encode(_tx.sender.publicKey.getEncoded),
           _tx.sender.address, _tx.signature.base58)
       }
     }

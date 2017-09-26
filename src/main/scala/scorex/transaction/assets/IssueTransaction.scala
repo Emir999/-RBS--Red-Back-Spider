@@ -5,7 +5,7 @@ import com.google.common.primitives.{Bytes, Longs}
 import com.wavesplatform.state2.ByteStr
 import play.api.libs.json.{JsObject, Json}
 import scorex.account.{PrivateKeyAccount, PublicKeyAccount}
-import scorex.crypto.EllipticCurveImpl
+import com.wavesplatform.crypto.GostSign
 import scorex.serialization.{BytesSerializable, Deser}
 import scorex.transaction.TransactionParser._
 import scorex.transaction.{ValidationError, _}
@@ -29,7 +29,7 @@ case class IssueTransaction private(sender: PublicKeyAccount,
   override lazy val assetId = id
 
   lazy val toSign: Array[Byte] = Bytes.concat(Array(transactionType.id.toByte),
-    sender.publicKey,
+    sender.publicKey.getEncoded,
     BytesSerializable.arrayWithSize(name),
     BytesSerializable.arrayWithSize(description),
     Longs.toByteArray(quantity),
@@ -109,6 +109,6 @@ object IssueTransaction {
              fee: Long,
              timestamp: Long): Either[ValidationError, IssueTransaction] =
     create(sender, name, description, quantity, decimals, reissuable, fee, timestamp, ByteStr.empty).right.map { unverified =>
-      unverified.copy(signature = ByteStr(EllipticCurveImpl.sign(sender, unverified.toSign)))
+      unverified.copy(signature = ByteStr(GostSign.sign(sender, unverified.toSign)))
     }
 }

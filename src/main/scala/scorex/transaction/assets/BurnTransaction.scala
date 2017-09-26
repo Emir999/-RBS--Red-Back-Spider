@@ -4,7 +4,7 @@ import com.google.common.primitives.{Bytes, Longs}
 import com.wavesplatform.state2.ByteStr
 import play.api.libs.json.{JsObject, Json}
 import scorex.account.{PrivateKeyAccount, PublicKeyAccount}
-import scorex.crypto.EllipticCurveImpl
+import com.wavesplatform.crypto.GostSign
 import scorex.transaction.TransactionParser._
 import scorex.transaction.{ValidationError, _}
 
@@ -21,7 +21,7 @@ case class BurnTransaction private(sender: PublicKeyAccount,
   override val transactionType: TransactionType.Value = TransactionType.BurnTransaction
 
   lazy val toSign: Array[Byte] = Bytes.concat(Array(transactionType.id.toByte),
-    sender.publicKey,
+    sender.publicKey.getEncoded,
     assetId.arr,
     Longs.toByteArray(amount),
     Longs.toByteArray(fee),
@@ -48,7 +48,6 @@ object BurnTransaction {
   }
 
   def parseTail(bytes: Array[Byte]): Try[BurnTransaction] = Try {
-    import EllipticCurveImpl._
     val sender = PublicKeyAccount(bytes.slice(0, KeyLength))
     val assetId = ByteStr(bytes.slice(KeyLength, KeyLength + AssetIdLength))
     val quantityStart = KeyLength + AssetIdLength
@@ -82,6 +81,6 @@ object BurnTransaction {
              fee: Long,
              timestamp: Long): Either[ValidationError, BurnTransaction] =
     create(sender, assetId, quantity, fee, timestamp, ByteStr.empty).right.map { unverified =>
-      unverified.copy(signature = ByteStr(EllipticCurveImpl.sign(sender, unverified.toSign)))
+      unverified.copy(signature = ByteStr(GostSign.sign(sender, unverified.toSign)))
     }
 }

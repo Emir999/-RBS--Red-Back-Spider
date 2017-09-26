@@ -1,18 +1,24 @@
 package scorex.block
 
+import java.security.KeyPairGenerator
+import javassist.bytecode.StackMapTable.Walker
+
 import cats._
 import com.google.common.primitives.{Bytes, Ints, Longs}
+import com.objsys.asn1j.runtime.Asn1BerEncodeBuffer
+import com.wavesplatform.crypto.GostSign
 import com.wavesplatform.settings.GenesisSettings
 import com.wavesplatform.state2.{ByteStr, Diff, LeaseInfo, Portfolio}
 import play.api.libs.json.{JsObject, Json}
+import ru.CryptoPro.JCP.JCP
 import scorex.account.{Address, PrivateKeyAccount, PublicKeyAccount}
 import scorex.consensus.nxt.{NxtConsensusBlockField, NxtLikeConsensusBlockData}
-import scorex.crypto.EllipticCurveImpl
 import scorex.crypto.hash.FastCryptographicHash.DigestSize
 import scorex.transaction.TransactionParser._
-import scorex.transaction.ValidationError.GenericError
 import scorex.transaction.{AssetAcc, _}
 import scorex.utils.ScorexLogging
+import scorex.wallet.Wallet
+import sun.security.jca.JCAUtil
 
 import scala.util.{Failure, Try}
 
@@ -84,7 +90,7 @@ case class Block(timestamp: Long, version: Byte, reference: ByteStr, signerData:
     Diff.empty.copy(portfolios = Map(acc -> p))
   })
 
-  override lazy val signatureValid: Boolean = EllipticCurveImpl.verify(signerData.signature.arr, bytesWithoutSignature, signerData.generator.publicKey)
+  override lazy val signatureValid: Boolean = GostSign.verify(signerData.signature.arr, bytesWithoutSignature, signerData.generator.publicKey)
   override lazy val signedDescendants: Seq[Signed] = transactionData
 }
 
@@ -165,10 +171,10 @@ object Block extends ScorexLogging {
                    signer: PrivateKeyAccount): Block = {
     val nonSignedBlock = Block(timestamp, version, reference, SignerData(signer, ByteStr.empty), consensusData, transactionData)
     val toSign = nonSignedBlock.bytes
-    val signature = EllipticCurveImpl.sign(signer, toSign)
+    val signature = GostSign.sign(signer, toSign)
     require(reference.arr.length == SignatureLength, "Incorrect reference")
     require(consensusData.generationSignature.length == GeneratorSignatureLength, "Incorrect consensusData.generationSignature")
-    require(signer.publicKey.length == KeyLength, "Incorrect signer.publicKey")
+    require(signer.publicKey.getEncoded.length == KeyLength, "Incorrect signer.publicKey")
     nonSignedBlock.copy(signerData = SignerData(signer, ByteStr(signature)))
   }
 
@@ -182,8 +188,6 @@ object Block extends ScorexLogging {
   def genesis(genesisSettings: GenesisSettings): Either[ValidationError, Block] = {
     val version: Byte = 1
 
-    val genesisSigner = PrivateKeyAccount(Array.empty)
-
     val transactionGenesisData = genesisTransactions(genesisSettings)
     val transactionGenesisDataField = TransactionsBlockFieldVersion1or2(transactionGenesisData)
     val consensusGenesisData = NxtLikeConsensusBlockData(genesisSettings.initialBaseTarget, Array.fill(DigestSize)(0: Byte))
@@ -196,23 +200,25 @@ object Block extends ScorexLogging {
     val reference = Array.fill(SignatureLength)(-1: Byte)
 
     val timestamp = genesisSettings.blockTimestamp
+
+    val genesisSignerPair = Wallet.kg.generateKeyPair()
+
+    val genesisSigner = genesisSignerPair.getPublic.getEncoded
+
     val toSign: Array[Byte] = Array(version) ++
       Bytes.ensureCapacity(Longs.toByteArray(timestamp), 8, 0) ++
       reference ++
       cBytes ++
       txBytes ++
-      genesisSigner.publicKey
+      genesisSigner
 
-    val signature = genesisSettings.signature.fold(EllipticCurveImpl.sign(genesisSigner, toSign))(_.arr)
+    val signature = GostSign.sign(genesisSignerPair.getPrivate, toSign)
 
-    if (EllipticCurveImpl.verify(signature, toSign, genesisSigner.publicKey))
-      Right(Block(timestamp = timestamp,
+    Right(Block(timestamp = timestamp,
         version = version,
         reference = ByteStr(reference),
-        signerData = SignerData(genesisSigner, ByteStr(signature)),
+        signerData = SignerData(PublicKeyAccount(genesisSigner), ByteStr(signature)),
         consensusData = consensusGenesisData,
         transactionData = transactionGenesisData))
-    else Left(GenericError("Passed genesis signature is not valid"))
-
   }
 }

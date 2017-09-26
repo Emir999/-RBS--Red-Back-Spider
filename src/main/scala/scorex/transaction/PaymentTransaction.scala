@@ -7,7 +7,7 @@ import com.wavesplatform.state2.ByteStr
 import play.api.libs.json.{JsObject, Json}
 import scorex.account.PublicKeyAccount._
 import scorex.account.{Address, PrivateKeyAccount, PublicKeyAccount}
-import scorex.crypto.EllipticCurveImpl
+import com.wavesplatform.crypto.GostSign
 import scorex.crypto.encode.Base58
 import scorex.crypto.hash.FastCryptographicHash
 import scorex.transaction.PaymentTransaction.signatureData
@@ -32,7 +32,7 @@ case class PaymentTransaction private(sender: PublicKeyAccount,
       "timestamp" -> timestamp,
       "signature" -> this.signature.base58,
       "sender" -> sender.address,
-      "senderPublicKey" -> Base58.encode(sender.publicKey),
+      "senderPublicKey" -> Base58.encode(sender.publicKey.getEncoded),
       "recipient" -> recipient.address,
       "amount" -> amount)
 
@@ -40,14 +40,14 @@ case class PaymentTransaction private(sender: PublicKeyAccount,
     val timestampBytes = Longs.toByteArray(timestamp)
     val amountBytes = Longs.toByteArray(amount)
     val feeBytes = Longs.toByteArray(fee)
-    Bytes.concat(Array(transactionType.id.toByte), timestampBytes, sender.publicKey, recipient.bytes.arr, amountBytes, feeBytes)
+    Bytes.concat(Array(transactionType.id.toByte), timestampBytes, sender.publicKey.getEncoded, recipient.bytes.arr, amountBytes, feeBytes)
   }
 
   lazy val hash = FastCryptographicHash(hashBytes)
 
   override lazy val bytes: Array[Byte] = Bytes.concat(hashBytes, signature.arr)
 
-  override lazy val signatureValid: Boolean = EllipticCurveImpl.verify(signature.arr,
+  override lazy val signatureValid: Boolean = GostSign.verify(signature.arr,
     signatureData(sender, recipient, amount, fee, timestamp), sender.publicKey)
 }
 
@@ -62,7 +62,7 @@ object PaymentTransaction {
 
   def create(sender: PrivateKeyAccount, recipient: Address, amount: Long, fee: Long, timestamp: Long): Either[ValidationError, PaymentTransaction] = {
     create(sender, recipient, amount, fee, timestamp, ByteStr.empty).right.map(unsigned => {
-      unsigned.copy(signature = ByteStr(EllipticCurveImpl.sign(sender, signatureData(sender, recipient, amount, fee, timestamp))))
+      unsigned.copy(signature = ByteStr(GostSign.sign(sender, signatureData(sender, recipient, amount, fee, timestamp))))
     })
   }
 
@@ -127,6 +127,6 @@ object PaymentTransaction {
     val amountBytes = Longs.toByteArray(amount)
     val feeBytes = Longs.toByteArray(fee)
 
-    Bytes.concat(typeBytes, timestampBytes, sender.publicKey, recipient.bytes.arr, amountBytes, feeBytes)
+    Bytes.concat(typeBytes, timestampBytes, sender.publicKey.getEncoded, recipient.bytes.arr, amountBytes, feeBytes)
   }
 }

@@ -19,7 +19,7 @@ import io.swagger.annotations._
 import play.api.libs.json._
 import scorex.account.PublicKeyAccount
 import scorex.api.http._
-import scorex.crypto.EllipticCurveImpl
+import com.wavesplatform.crypto.GostSign
 import scorex.crypto.encode.Base58
 import scorex.transaction.assets.exchange.OrderJson._
 import scorex.transaction.assets.exchange.{AssetPair, Order}
@@ -54,7 +54,7 @@ case class MatcherApiRoute(wallet: Wallet,storedState: StateReader,
   @ApiOperation(value = "Matcher Public Key", notes = "Get matcher public key", httpMethod = "GET")
   def matcherPublicKey: Route = (pathEndOrSingleSlash & get) {
     complete(wallet.findWallet(matcherSettings.account)
-      .map(a => JsString(Base58.encode(a.publicKey)))
+      .map(a => JsString(Base58.encode(a.publicKey.getEncoded)))
       .getOrElse[JsValue](JsString("")))
   }
 
@@ -169,7 +169,7 @@ case class MatcherApiRoute(wallet: Wallet,storedState: StateReader,
       val sig = Base58.decode(signature).get
       val ts = timestamp.toLong
       require(math.abs(ts - NTP.correctedTime()).millis < matcherSettings.maxTimestampDiff, "Incorrect timestamp")
-      require(EllipticCurveImpl.verify(sig, pk ++ Longs.toByteArray(ts), pk), "Incorrect signature")
+      require(GostSign.verify(sig, pk ++ Longs.toByteArray(ts), pk), "Incorrect signature")
       PublicKeyAccount(pk).address
     }
   }
