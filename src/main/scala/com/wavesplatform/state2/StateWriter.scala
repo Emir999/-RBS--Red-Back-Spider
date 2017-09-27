@@ -35,6 +35,8 @@ class StateWriterImpl(ds: DataSource) extends StateReader with StateWriter {
       .toMap
   }
 
+  override def effectiveBalanceAtHeightWithConfirmations(acc: Address, atHeight: Int, confirmations: Int) = ???
+
   override def accountPortfolio(a: Address) = ???
 
   override def transactionInfo(id: ByteStr) = ???

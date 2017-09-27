@@ -20,6 +20,8 @@ class StateReaderImpl(p: StateStorage) extends StateReader {
     }
   }
 
+  override def effectiveBalanceAtHeightWithConfirmations(acc: Address, atHeight: Int, confirmations: Int): Long = ???
+
   override def accountPortfolio(a: Address): Portfolio = ???
 
   override def assetDescription(id: ByteStr) = ???

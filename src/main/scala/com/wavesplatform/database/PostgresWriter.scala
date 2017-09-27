@@ -208,6 +208,24 @@ class PostgresWriter(ds: DataSource) extends StateReader with StateWriter {
       .getOrElse(OrderFillInfo(0, 0))
   }
 
+
+  override def effectiveBalanceAtHeightWithConfirmations(acc: Address, atHeight: Int, confirmations: Int) =
+    readOnly { implicit s =>
+      sql"""with lowest_height as (
+           |    select height, address from waves_balances
+           |    where address = ? and height <= ?
+           |    order by height desc limit 1)
+           |select coalesce(min(wb.effective_balance), 0) from waves_balances wb, lowest_height lh
+           |where wb.address = lh.address
+           |and wb.height <= ?
+           |and wb.height >= lh.height""".stripMargin
+        .bind(acc.address, atHeight - confirmations, atHeight)
+        .map(_.get[Long](1))
+        .single()
+        .apply()
+        .getOrElse(0L)
+    }
+
   override def clear(): Unit = ???
 
   override def applyBlockDiff(blockDiff: BlockDiff, block: Block, newHeight: Int): Unit = {

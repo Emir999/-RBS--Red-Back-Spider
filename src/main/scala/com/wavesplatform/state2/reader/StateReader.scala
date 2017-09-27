@@ -44,6 +44,8 @@ trait StateReader {
   def snapshotAtHeight(acc: Address, h: Int): Option[Snapshot]
 
   def filledVolumeAndFee(orderId: ByteStr): OrderFillInfo
+
+  def effectiveBalanceAtHeightWithConfirmations(acc: Address, atHeight: Int, confirmations: Int): Long
 }
 
 object StateReader {
@@ -70,8 +72,6 @@ object StateReader {
     def assetDistribution(assetId: Array[Byte]): Map[String, Long] =
       s.assetDistribution(ByteStr(assetId))
         .map { case (acc, amt) => (acc.address, amt) }
-
-    def effectiveBalanceAtHeightWithConfirmations(acc: Address, atHeight: Int, confirmations: Int): Long = ???
 
     def balanceWithConfirmations(acc: Address, confirmations: Int): Long = ???
 

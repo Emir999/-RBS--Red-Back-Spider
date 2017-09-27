@@ -60,20 +60,7 @@ class BlockchainUpdaterImpl private(persisted: StateWriter with StateReader,
 
   def historyReader: NgHistory with DebugNgHistory with FeatureProvider = read { implicit l => new NgHistoryReader(() => ngState(), historyWriter, settings.blockchainSettings.functionalitySettings) }
 
-  private def updatePersistedAndInMemory(): Unit = write { implicit l =>
-    logHeights("State rebuild started")
-    val persistFrom = persisted.height + 1
-    val persistUpTo = historyWriter.height() - minimumInMemoryDiffSize + 1
-
-    ranges(persistFrom, persistUpTo, minimumInMemoryDiffSize).foreach { case (head, last) =>
-      val diffToBePersisted = unsafeDiffByRange(persisted, head, last)
-      persisted.applyBlockDiff(diffToBePersisted, ???, 0)
-    }
-
-    bottomMemoryDiff.set(unsafeDiffByRange(persisted, persisted.height + 1, historyWriter.height() + 1))
-    topMemoryDiff.set(BlockDiff.empty)
-    logHeights("State rebuild finished")
-  }
+  private def updatePersistedAndInMemory(): Unit = {}
 
   private def displayFeatures(s: Set[Short]): String = s"FEATURE${if (s.size > 1) "S"} ${s.mkString(", ")} ${if (s.size > 1) "WERE" else "WAS"}"
 
@@ -305,7 +292,6 @@ object BlockchainUpdaterImpl {
     val blockchainUpdater =
       new BlockchainUpdaterImpl(persistedState, settings, history, minimumInMemoryDiffSize, history, synchronizationToken)
     blockchainUpdater.logHeights("Constructing BlockchainUpdaterImpl")
-    blockchainUpdater.updatePersistedAndInMemory()
     blockchainUpdater
   }
 
