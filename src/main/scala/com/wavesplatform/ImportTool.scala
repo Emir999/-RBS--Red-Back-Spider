@@ -5,7 +5,7 @@ import java.util.Properties
 import java.util.concurrent.locks.ReentrantReadWriteLock
 
 import com.typesafe.config.ConfigFactory
-import com.wavesplatform.database.PostgresWriter
+import com.wavesplatform.database.SQLiteWriter
 import com.wavesplatform.history.HistoryWriterImpl
 import com.wavesplatform.settings.{WavesSettings, loadConfig}
 import com.wavesplatform.state2.diffs.BlockDiffer
@@ -25,21 +25,24 @@ object ImportTool extends ScorexLogging {
     }
 
     val props = new Properties()
-    props.put("url", s"jdbc:postgresql:waves")
+    props.put("url", s"jdbc:sqlite:waves.db")
+    props.put("enforceForeignKeys", "true")
+    props.put("lockingMode", "NORMAL")
     val hc = new HikariConfig()
-    hc.setDataSourceClassName("org.postgresql.ds.PGSimpleDataSource")
+    hc.setDataSourceClassName("org.sqlite.SQLiteDataSource")
+//    hc.setDataSourceClassName("org.postgresql.ds.PGSimpleDataSource")
     //    hc.setDriverClassName("org.h2.Driver")
-    hc.setUsername("phearnot")
+//    hc.setUsername("phearnot")
 //    hc.setPassword("sa")
     hc.setDataSourceProperties(props)
     val hds = new HikariDataSource(hc)
     val flyway = new Flyway
-    flyway.setLocations("db/migration/postgresql")
+    flyway.setLocations("db/migration/sqlite")
     flyway.setDataSource(hds)
     flyway.migrate()
     hc.setAutoCommit(false)
 
-    val state = new PostgresWriter(hds)
+    val state = new SQLiteWriter(hds)
 
     val history = HistoryWriterImpl(settings.blockchainSettings.blockchainFile, new ReentrantReadWriteLock(true),
       settings.blockchainSettings.functionalitySettings, settings.featuresSettings).get

@@ -47,7 +47,8 @@ object Dependencies {
     "org.scalikejdbc" %% "scalikejdbc" % "3.0.2",
     "com.h2database" % "h2" % "1.4.196",
     "com.h2database" % "h2-mvstore" % "1.4.196",
-    "org.postgresql" % "postgresql" % "42.1.4"
+    "org.postgresql" % "postgresql" % "42.1.4",
+    "org.xerial" % "sqlite-jdbc" % "3.20.0"
   )
 
   lazy val logging = Seq(

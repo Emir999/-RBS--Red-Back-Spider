@@ -64,8 +64,14 @@ class CompositeStateReader(inner: StateReader, blockDiff: BlockDiff) extends Sta
     }
   }
 
-  override def wavesBalance(a: Address) =
-    blockDiff.snapshots.get(a).flatMap(_.wavesBalance).getOrElse(inner.wavesBalance(a))
+  override def wavesBalance(a: Address) = {
+    val innerBalance = inner.wavesBalance(a)
+    txDiff.portfolios.get(a).fold(innerBalance) { p =>
+      innerBalance.copy(
+        regularBalance = safeSum(innerBalance.regularBalance, p.balance),
+        effectiveBalance = safeSum(innerBalance.effectiveBalance, p.leaseInfo.leaseIn) - p.leaseInfo.leaseOut)
+    }
+  }
 
   override def assetBalance(a: Address) =
     inner.assetBalance(a) ++ blockDiff.snapshots.get(a).fold(Map.empty[ByteStr, Long])(_.assetBalances)
