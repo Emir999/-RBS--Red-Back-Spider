@@ -1,16 +1,13 @@
 package com.wavesplatform
 
 import java.io.File
-import java.util.Properties
 import java.util.concurrent.locks.ReentrantReadWriteLock
 
 import com.typesafe.config.ConfigFactory
-import com.wavesplatform.database.SQLiteWriter
+import com.wavesplatform.database.{SQLiteWriter, createDataSource}
 import com.wavesplatform.history.HistoryWriterImpl
 import com.wavesplatform.settings.{WavesSettings, loadConfig}
 import com.wavesplatform.state2.diffs.BlockDiffer
-import com.zaxxer.hikari.{HikariConfig, HikariDataSource}
-import org.flywaydb.core.Flyway
 import scorex.account.AddressScheme
 import scorex.block.Block
 import scorex.transaction.Signed
@@ -24,25 +21,8 @@ object ImportTool extends ScorexLogging {
       override val chainId: Byte = settings.blockchainSettings.addressSchemeCharacter.toByte
     }
 
-    val props = new Properties()
-    props.put("url", s"jdbc:sqlite:waves.db")
-    props.put("enforceForeignKeys", "true")
-    props.put("lockingMode", "NORMAL")
-    val hc = new HikariConfig()
-    hc.setDataSourceClassName("org.sqlite.SQLiteDataSource")
-//    hc.setDataSourceClassName("org.postgresql.ds.PGSimpleDataSource")
-    //    hc.setDriverClassName("org.h2.Driver")
-//    hc.setUsername("phearnot")
-//    hc.setPassword("sa")
-    hc.setDataSourceProperties(props)
-    val hds = new HikariDataSource(hc)
-    val flyway = new Flyway
-    flyway.setLocations("db/migration/sqlite")
-    flyway.setDataSource(hds)
-    flyway.migrate()
-    hc.setAutoCommit(false)
-
-    val state = new SQLiteWriter(hds)
+    val config = ConfigFactory.parseString("url = \"jdbc:sqlite:waves.db\"")
+    val state = new SQLiteWriter(createDataSource(config))
 
     val history = HistoryWriterImpl(settings.blockchainSettings.blockchainFile, new ReentrantReadWriteLock(true),
       settings.blockchainSettings.functionalitySettings, settings.featuresSettings).get
