@@ -185,7 +185,7 @@ class Miner(
     }
   }
 
-  def scheduleMining(): Unit = {
+  def scheduleMining(): Unit = if (settings.minerSettings.enable) {
     Miner.blockMiningStarted.increment()
     scheduledAttempts := CompositeCancelable.fromSet(
       wallet.privateKeyAccounts().map(generateBlockTask).map(_.runAsync).toSet)

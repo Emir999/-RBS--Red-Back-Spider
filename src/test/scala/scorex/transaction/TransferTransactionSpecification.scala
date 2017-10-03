@@ -11,7 +11,7 @@ class TransferTransactionSpecification extends PropSpec with PropertyChecks with
   property("Transfer serialization roundtrip") {
     forAll(transferGen) { transfer: TransferTransaction =>
       require(transfer.bytes.head == TransactionType.TransferTransaction.id)
-      val recovered = TransferTransaction.parseTail(transfer.bytes.tail).get
+      val recovered = TransferTransaction.parseTail(transfer.bytes.tail).getА
 
       recovered.sender.address shouldEqual transfer.sender.address
       recovered.assetId.map(_ == transfer.assetId.get).getOrElse(transfer.assetId.isEmpty) shouldBe true

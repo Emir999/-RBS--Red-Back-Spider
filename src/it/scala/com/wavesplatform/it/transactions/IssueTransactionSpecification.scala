@@ -15,7 +15,7 @@ class IssueTransactionSpecification(override val allNodes: Seq[Node], override v
   //private val defaultTokenDecimals:Byte = 2
   private val assetFee = 5.waves
 
-  test("asset issue changes issuer's asset balance; issuer's waves balance is decreased by fee") {
+ ignore("asset issue changes issuer's asset balance; issuer's waves balance is decreased by fee") {
     val assetName = "myasset"
     val assetDescription = "my asset description"
     val f = for {
@@ -34,7 +34,7 @@ class IssueTransactionSpecification(override val allNodes: Seq[Node], override v
     Await.result(f, 1.minute)
   }
 
-  test("Able to create asset with the same name") {
+ ignore("Able to create asset with the same name") {
     val assetName = "myasset"
     val assetDescription = "my asset description"
     val f = for {
@@ -56,7 +56,7 @@ class IssueTransactionSpecification(override val allNodes: Seq[Node], override v
     Await.result(f, 1.minute)
   }
 
-  test("Not able to create asset when insufficient funds") {
+ ignore("Not able to create asset when insufficient funds") {
     val assetName = "myasset"
     val assetDescription = "my asset description"
     val f = for {
@@ -79,7 +79,7 @@ class IssueTransactionSpecification(override val allNodes: Seq[Node], override v
       (1l, -1, "Too big sequences requested")) //??? what message shoild be?
 
   forAll(invalidAssetValue) { (assetVal: Long, decimals: Int, message: String) =>
-    test(s"Not able to create asset total token='$assetVal', decimals='$decimals' ") {
+   ignore(s"Not able to create asset total token='$assetVal', decimals='$decimals' ") {
       val assetName = "myasset2"
       val assetDescription = "my asset description 2"
       val decimalBytes: Byte = decimals.toByte
@@ -93,5 +93,80 @@ class IssueTransactionSpecification(override val allNodes: Seq[Node], override v
     }
   }
 
+  def randomAlpha(length: Int): String = {
+    val chars = ('a' to 'z') ++ ('A' to 'Z')
+    randomStringFromCharList(length, chars)
+  }
+
+  // used by #6 and #7
+  def randomStringFromCharList(length: Int, chars: Seq[Char]): String = {
+    val sb = new StringBuilder
+    for (i <- 1 to length) {
+      val randomNum = util.Random.nextInt(chars.length)
+      sb.append(chars(randomNum))
+    }
+    sb.toString
+  }
+
+
+  val assetNameAndDescriptionLimits =
+    Table(("assetNameLength", "assetDescriptionLength", "message"),
+      (17, 2, "invalid name"),
+      (3, 2, "invalid name"),
+      (0,2,"invalid name"),
+      (10, 1001, "Too big sequences requested"))///????
+
+  forAll(assetNameAndDescriptionLimits) { (assetNameLength: Int, assetDescriptionLength: Int, message: String) =>
+   test(s"Not able to create asset with wrodsfng name $assetNameLength or descr $assetDescriptionLength") {
+      val assetVal = 1000l
+      val decimalBytes: Byte = 1
+      val assetName = randomAlpha(assetNameLength)
+      val assetDescription = randomAlpha(assetDescriptionLength)
+
+      val f = for {
+        _ <- assertBadRequestAndMessage(sender.issue(firstAddress, assetName, assetDescription, assetVal, decimalBytes, reissuable = false, assetFee),
+          message)
+      } yield succeed
+      Await.result(f, 1.minute)
+    }
+
+  }
+
+  val assetNameAndDescriptionChars =
+    Table(("assetName", "assetDescription", "message"),
+      ("~!@#$%^&*()_+=\"'", "", "invalid name"))
+  forAll(assetNameAndDescriptionChars) { (assetName: String, assetDescription: String, message: String) =>
+    test(s"Not able to create asset with wrodsfng name $assetName or descr $assetDescription") {
+      val assetVal = 1000l
+      val decimalBytes: Byte = 1
+
+      val f = for {
+        _ <- assertBadRequestAndMessage(sender.issue(firstAddress, assetName, assetDescription, assetVal, decimalBytes, reissuable = false, assetFee),
+          message)
+      } yield succeed
+      Await.result(f, 1.minute)
+    }
+
+  }
+
+
+  test("Transfer asset to another address"){
+    val assetName = "myasset"
+    val assetDescription = "my asset description"
+    val f = for {
+
+      firstAddressBalance <- accountBalance(firstAddress)
+      firstAddressEffectiveBalance <- accountEffectiveBalance(firstAddress)
+
+      issuedAssetId <- sender.issue(firstAddress, assetName, assetDescription, defaultQuantity, 2, reissuable = true, assetFee).map(_.id)
+
+      _ <- waitForHeightAraise(issuedAssetId, 1)
+
+      _ <- assertBalances(firstAddress, firstAddressBalance - assetFee, firstAddressEffectiveBalance - assetFee)
+      _ <- assertAssetBalance(firstAddress, issuedAssetId, defaultQuantity)
+    } yield succeed
+
+    Await.result(f, 1.minute)
+  }
 
 }

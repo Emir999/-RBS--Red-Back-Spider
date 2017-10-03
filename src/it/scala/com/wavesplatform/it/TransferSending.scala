@@ -8,7 +8,9 @@ import scala.concurrent.Future
 import scala.util.Random
 
 object TransferSending {
+
   case class Req(source: String, targetAddress: String, amount: Long, fee: Long)
+
 }
 
 trait TransferSending {
@@ -20,6 +22,7 @@ trait TransferSending {
   }
 
   def nodes: Seq[Node]
+
   private lazy val addressToNode = nodes.map(n => n.address -> n).toMap
 
   def generateTransfersBetweenAccounts(n: Int, balances: Map[String, Long]): Seq[Req] = {
