@@ -95,7 +95,6 @@ create table transactions (
     tx_id digest_type,
     signature signature_type,
     tx_type tx_type_id_type not null,
-    tx_json json not null,
     height integer references blocks(height) on delete cascade,
 
     primary key (tx_id, signature)
@@ -121,34 +120,6 @@ create table payment_transactions (
 );
 
 create index payment_transactions_height_index on payment_transactions(height);
-
-create table exchange_transactions (
-    tx_id digest_type primary key,
-    amount_asset_id blob,
-    price_asset_id blob,
-    amount amount_type,
-    price amount_type,
-    height integer references blocks(height) on delete cascade,
-
-    constraint valid_pair check (
-        (amount_asset_id is not null or price_asset_id is not null) and amount_asset_id != price_asset_id
-    )
-);
-
-create index exchange_transactions_height_index on exchange_transactions(height);
-
-create table transfer_transactions (
-    tx_id digest_type primary key,
-    sender address_type,
-    recipient address_or_alias,
-    asset_id blob,
-    amount amount_type,
-    fee_asset_id blob,
-    fee amount_type,
-    height integer references blocks(height) on delete cascade
-);
-
-create index transfer_transactions_height_index on transfer_transactions(height);
 
 create table aliases (
     alias blob primary key,

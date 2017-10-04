@@ -27,6 +27,8 @@ package object database {
       // the following line is SUPER IMPORTANT: http://www.sqlite.org/pragma.html#pragma_foreign_keys
       props.setProperty("enforceForeignKeys", "true")
       props.setProperty("lockingMode", "NORMAL")
+      props.setProperty("incrementalVacuum", "-1")
+      props.getProperty("journalMode", "WAL")
     } else if (jdbcUrl.startsWith("jdbc:postgresql:")) {
       hc.setDataSourceClassName("org.postgresql.ds.PGSimpleDataSource")
       flyway.setLocations("db/migration/postgresql")

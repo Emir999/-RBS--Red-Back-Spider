@@ -10,8 +10,7 @@ import com.wavesplatform.state2.{AssetDescription, AssetInfo, BlockDiff, ByteStr
 import scalikejdbc.{DB, DBSession, using, _}
 import scorex.account.{Address, AddressOrAlias, Alias, PublicKeyAccount}
 import scorex.block.Block
-import scorex.transaction.assets.exchange.ExchangeTransaction
-import scorex.transaction.assets.{IssueTransaction, TransferTransaction}
+import scorex.transaction.assets.IssueTransaction
 import scorex.transaction.lease.{LeaseCancelTransaction, LeaseTransaction}
 import scorex.transaction.{CreateAliasTransaction, GenesisTransaction, PaymentTransaction, SignedTransaction}
 
@@ -266,6 +265,25 @@ class SQLiteWriter(ds: DataSource) extends StateReader with StateWriter {
           .apply()
 
         storeAddressTransactionIds(blockDiff, newHeight)
+
+        if (newHeight % 2000 == 0) {
+          sql"analyze".update().apply()
+
+          val heightParams = Seq(newHeight - 4000, newHeight - 2000, newHeight - 4000)
+
+          sql"""with last_asset_changes as (
+               |    select address, asset_id from asset_balances where height between ? and ? group by address, asset_id)
+               |delete from asset_balances where (address, asset_id) in last_asset_changes and height < ?""".stripMargin
+            .bind(heightParams: _*)
+            .update()
+            .apply()
+
+          sql"""with last_changes as (select address from waves_balances where height between ? and ? group by address)
+               |delete from waves_balances where waves_balances.address in last_changes and height < ?""".stripMargin
+            .bind(heightParams: _*)
+            .update()
+            .apply()
+        }
       }
     }
   }
@@ -373,8 +391,6 @@ class SQLiteWriter(ds: DataSource) extends StateReader with StateWriter {
       .apply()
 
   private def storeTransactions(blockDiff: BlockDiff, newHeight: Int)(implicit session: DBSession) = {
-    val exchangeParams = Seq.newBuilder[Seq[Any]]
-    val transferParams = Seq.newBuilder[Seq[Any]]
     val transactionParams = Seq.newBuilder[Seq[Any]]
 
     blockDiff.txsDiff.transactions.values.foreach {
@@ -382,29 +398,12 @@ class SQLiteWriter(ds: DataSource) extends StateReader with StateWriter {
         transactionParams += Seq(pt.hash, pt.signature.arr, transactionTypes(pt.transactionType.id - 1), newHeight)
       case (_, t: SignedTransaction, _) =>
         transactionParams += Seq(t.id.arr, t.signature.arr, transactionTypes(t.transactionType.id - 1), newHeight)
-        t match {
-          case et: ExchangeTransaction =>
-            exchangeParams += Seq(et.id.arr, et.buyOrder.assetPair.amountAsset.map(_.arr),
-              et.buyOrder.assetPair.priceAsset.map(_.arr), et.amount, et.price, newHeight)
-          case tt: TransferTransaction =>
-            transferParams += Seq(tt.id.arr, tt.sender.address, tt.recipient.stringRepr, tt.assetId.map(_.arr), tt.amount,
-              tt.feeAssetId.map(_.arr), tt.fee, newHeight)
-          case _ =>
-        }
       case (_, gt: GenesisTransaction, _) =>
         transactionParams += Seq(gt.id.arr, gt.signature.arr, transactionTypes(gt.transactionType.id - 1), newHeight)
     }
 
-    sql"insert into transactions (tx_id, signature, tx_type, tx_json, height) values (?,?,?,'{}',?)"
+    sql"insert into transactions (tx_id, signature, tx_type, height) values (?,?,?,?)"
       .batch(transactionParams.result(): _*)
-      .apply()
-
-    sql"insert into exchange_transactions (tx_id, amount_asset_id, price_asset_id, amount, price, height) values (?,?,?,?,?,?)"
-      .batch(exchangeParams.result(): _*)
-      .apply()
-
-    sql"insert into transfer_transactions (tx_id, sender, recipient, asset_id, amount, fee_asset_id, fee, height) values (?,?,?,?,?,?,?,?)"
-      .batch(transferParams.result(): _*)
       .apply()
   }
 }
