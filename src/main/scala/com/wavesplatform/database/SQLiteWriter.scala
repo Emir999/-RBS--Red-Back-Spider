@@ -111,18 +111,17 @@ class SQLiteWriter(ds: DataSource) extends StateReader with StateWriter {
     .maximumSize(10000)
     .build(new CacheLoader[ByteStr, Option[AssetDescription]] {
       override def load(key: ByteStr) = readOnly { implicit s =>
-        sql"""select ai.issuer, ai.name, ai.description, ai.decimals, min(aq.reissuable), sum(aq.quantity_change)
+        sql"""select ai.issuer, ai.name, ai.decimals, min(aq.reissuable)
              |from asset_info ai, asset_quantity aq
              |where ai.asset_id = aq.asset_id
              |and ai.asset_id = ?
-             |group by ai.issuer, ai.name, ai.description, ai.decimals""".stripMargin
+             |group by ai.issuer, ai.name, ai.decimals""".stripMargin
           .bind(key.arr)
           .map { rs => AssetDescription(
             PublicKeyAccount(rs.get[Array[Byte]](1)),
             rs.get[Array[Byte]](2),
-            rs.get[Array[Byte]](3),
-            rs.get[Int](4),
-            AssetInfo(rs.get[Boolean](5), rs.get[BigInt](6))) }
+            rs.get[Int](3),
+            rs.get[Boolean](4)) }
           .single()
           .apply()
       }

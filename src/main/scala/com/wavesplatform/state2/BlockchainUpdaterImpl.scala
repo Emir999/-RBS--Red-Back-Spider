@@ -6,9 +6,8 @@ import cats._
 import cats.implicits._
 import com.wavesplatform.features.{BlockchainFeatures, FeatureProvider}
 import com.wavesplatform.history.HistoryWriterImpl
+import com.wavesplatform.metrics.{Instrumented, TxsInBlockchainStats}
 import com.wavesplatform.settings.WavesSettings
-import com.wavesplatform.metrics.TxsInBlockchainStats
-import com.wavesplatform.metrics.Instrumented
 import com.wavesplatform.state2.BlockchainUpdaterImpl._
 import com.wavesplatform.state2.NgState._
 import com.wavesplatform.state2.diffs.BlockDiffer
@@ -197,7 +196,7 @@ class BlockchainUpdaterImpl private(persisted: StateWriter with StateReader,
             if (height < persisted.height) {
               log.info(s"Rollback to h=$height requested. Persisted height=${persisted.height}, will drop state and reapply blockchain now")
               persisted.clear()
-              updatePersistedAndInMemory()
+//              updatePersistedAndInMemory()
             } else {
               if (bestLiquidState.height != height) {
                 val persistedPlusBottomHeight = persisted.height + bottomMemoryDiff().heightDiff

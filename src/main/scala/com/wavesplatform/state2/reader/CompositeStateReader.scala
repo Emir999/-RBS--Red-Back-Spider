@@ -14,11 +14,11 @@ class CompositeStateReader(inner: StateReader, blockDiff: BlockDiff) extends Sta
   override def assetDescription(id: ByteStr) = {
     val issuedInfo = txDiff.transactions.collectFirst {
       case (`id`, (_, it: IssueTransaction, _)) =>
-        AssetDescription(it.sender, it.name, it.description, it.decimals, AssetInfo(it.reissuable, it.quantity))
+        AssetDescription(it.sender, it.name, it.decimals, it.reissuable)
     } orElse inner.assetDescription(id)
 
     issuedInfo.map { ii =>
-      txDiff.issuedAssets.get(id).fold(ii)(ai => ii.copy(info = ai))
+      txDiff.issuedAssets.get(id).fold(ii)(ai => ii.copy(reissuable = ai.isReissuable))
     }
   }
 
