@@ -15,7 +15,6 @@ import scorex.transaction.lease.{LeaseCancelTransaction, LeaseTransaction}
 import scorex.transaction.{CreateAliasTransaction, GenesisTransaction, PaymentTransaction, SignedTransaction}
 
 class SQLiteWriter(ds: DataSource) extends StateReader with StateWriter {
-  import PostgresWriter._
   private def readOnly[A](f: DBSession => A): A = using(DB(ds.getConnection))(_.localTx(f))
 
   override def nonZeroLeaseBalances = readOnly { implicit s =>
@@ -112,11 +111,11 @@ class SQLiteWriter(ds: DataSource) extends StateReader with StateWriter {
     .maximumSize(10000)
     .build(new CacheLoader[ByteStr, Option[AssetDescription]] {
       override def load(key: ByteStr) = readOnly { implicit s =>
-        sql"""select ai.issuer, ai.name, ai.description, ai.decimals, aq.reissuable, aq.total_quantity
+        sql"""select ai.issuer, ai.name, ai.description, ai.decimals, min(aq.reissuable), sum(aq.quantity_change)
              |from asset_info ai, asset_quantity aq
              |where ai.asset_id = aq.asset_id
              |and ai.asset_id = ?
-             |order by aq.height desc limit 1""".stripMargin
+             |group by ai.issuer, ai.name, ai.description, ai.decimals""".stripMargin
           .bind(key.arr)
           .map { rs => AssetDescription(
             PublicKeyAccount(rs.get[Array[Byte]](1)),
@@ -355,13 +354,7 @@ class SQLiteWriter(ds: DataSource) extends StateReader with StateWriter {
       .apply()
 
   private def storeReissuedAssets(blockDiff: BlockDiff, newHeight: Int)(implicit session: DBSession) = {
-    sql"""insert into asset_quantity
-         |with this_asset as (select ? asset_id)
-         |select ta.asset_id, coalesce(aq.total_quantity, 0) + ?, ?, ?
-         |from this_asset ta
-         |left join asset_quantity aq on ta.asset_id = aq.asset_id
-         |order by aq.height desc
-         |limit 1""".stripMargin
+    sql"insert into asset_quantity (asset_id, quantity_change, reissuable, height) values (?,?,?,?)"
       .batch(blockDiff.
         txsDiff.issuedAssets.map { case (id, ai) => Seq(id.arr, ai.volume, ai.isReissuable, newHeight) }.toSeq: _*)
       .apply()
@@ -395,11 +388,11 @@ class SQLiteWriter(ds: DataSource) extends StateReader with StateWriter {
 
     blockDiff.txsDiff.transactions.values.foreach {
       case (_, pt: PaymentTransaction, _) =>
-        transactionParams += Seq(pt.hash, pt.signature.arr, transactionTypes(pt.transactionType.id - 1), newHeight)
+        transactionParams += Seq(pt.hash, pt.signature.arr, pt.transactionType.id, newHeight)
       case (_, t: SignedTransaction, _) =>
-        transactionParams += Seq(t.id.arr, t.signature.arr, transactionTypes(t.transactionType.id - 1), newHeight)
+        transactionParams += Seq(t.id.arr, t.signature.arr, t.transactionType.id, newHeight)
       case (_, gt: GenesisTransaction, _) =>
-        transactionParams += Seq(gt.id.arr, gt.signature.arr, transactionTypes(gt.transactionType.id - 1), newHeight)
+        transactionParams += Seq(gt.id.arr, gt.signature.arr, gt.transactionType.id, newHeight)
     }
 
     sql"insert into transactions (tx_id, signature, tx_type, height) values (?,?,?,?)"
@@ -407,18 +400,3 @@ class SQLiteWriter(ds: DataSource) extends StateReader with StateWriter {
       .apply()
   }
 }
-
-object SQLiteWriter {
-  val transactionTypes = IndexedSeq(
-    "genesis",
-    "payment",
-    "issue",
-    "transfer",
-    "reissue",
-    "burn",
-    "exchange",
-    "lease",
-    "lease_cancel",
-    "create_alias")
-}
-
