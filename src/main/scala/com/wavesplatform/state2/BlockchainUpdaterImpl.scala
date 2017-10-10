@@ -78,12 +78,15 @@ class BlockchainUpdaterImpl private(persisted: StateWriter with StateReader,
 
     if (height % settings.blockchainSettings.functionalitySettings.featureCheckBlocksPeriod == 0) {
 
-      val acceptedFeatures = historyWriter.featureVotesCountWithinActivationWindow(height)
+
+      val approvedFeatures = historyWriter.featureVotesCountWithinActivationWindow(height)
         .map { case (feature, votes) => feature -> (if (block.supportedFeaturesIds.contains(feature)) votes + 1 else votes) }
         .filter { case (_, votes) => votes >= settings.blockchainSettings.functionalitySettings.blocksForFeatureActivation }
         .keySet
 
-      val unimplementedAccepted = acceptedFeatures.diff(BlockchainFeatures.implemented)
+      log.info(s"Features approved on height $height: ${approvedFeatures.mkString(", ")}")
+
+      val unimplementedAccepted = approvedFeatures.diff(BlockchainFeatures.implemented)
       if (unimplementedAccepted.nonEmpty) {
         log.warn(s"UNIMPLEMENTED ${displayFeatures(unimplementedAccepted)} ACCEPTED ON BLOCKCHAIN")
         log.warn("PLEASE, UPDATE THE NODE AS SOON AS POSSIBLE")
@@ -91,6 +94,8 @@ class BlockchainUpdaterImpl private(persisted: StateWriter with StateReader,
       }
 
       val activatedFeatures = historyWriter.activatedFeatures(height)
+
+      log.info(s"Features activated on height $height: ${activatedFeatures.mkString(", ")}")
 
       val unimplementedActivated = activatedFeatures.diff(BlockchainFeatures.implemented)
       if (unimplementedActivated.nonEmpty) {
@@ -103,7 +108,7 @@ class BlockchainUpdaterImpl private(persisted: StateWriter with StateReader,
         else log.error("OTHERWISE THE NODE WILL END UP ON A FORK")
       }
 
-      acceptedFeatures
+      approvedFeatures
     }
     else Set.empty
   }
