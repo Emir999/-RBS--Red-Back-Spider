@@ -53,6 +53,9 @@ class HistoryWriterImpl private(file: Option[File], val synchronizationToken: Re
     val votingWindowOpening = FeatureProvider.activationWindowOpeningFromHeight(height, activationWindowSize)
     val votesWithinWindow = featuresVotes().getOrDefault(votingWindowOpening, Map.empty[Short, Int])
     val newVotes = votes.foldLeft(votesWithinWindow)((v, feature) => v + (feature -> (v.getOrElse(feature, 0) + voteMod)))
+
+    log.trace("Feature votes")
+    newVotes.foreach(a => log.trace(s"${a._1} -> ${a._2}v"))
     featuresVotes.mutate(_.put(votingWindowOpening, newVotes))
   }
 
@@ -78,7 +81,7 @@ class HistoryWriterImpl private(file: Option[File], val synchronizationToken: Re
         if (h % 100 == 0) db.compact(CompactFillRate, CompactMemorySize)
 
         log.trace("Features")
-        featuresState().entrySet().forEach(x => log.trace(s"${x.getKey} -> ${x.getValue}"))
+        featuresState().entrySet().forEach(x => log.trace(s"${x.getKey} -> ${x.getValue}h"))
 
         log.trace(s"Full Block(id=${block.uniqueId} on $h h, txs_count=${block.transactionData.size}) persisted")
         blockDiff
