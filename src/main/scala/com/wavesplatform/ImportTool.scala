@@ -4,7 +4,7 @@ import java.io.File
 import java.util.concurrent.locks.ReentrantReadWriteLock
 
 import com.typesafe.config.ConfigFactory
-import com.wavesplatform.database.{SQLiteWriter, createDataSource}
+import com.wavesplatform.database.{PostgresWriter, createDataSource}
 import com.wavesplatform.history.HistoryWriterImpl
 import com.wavesplatform.settings.{WavesSettings, loadConfig}
 import com.wavesplatform.state2.diffs.BlockDiffer
@@ -21,8 +21,8 @@ object ImportTool extends ScorexLogging {
       override val chainId: Byte = settings.blockchainSettings.addressSchemeCharacter.toByte
     }
 
-    val config = ConfigFactory.parseString("url = \"jdbc:sqlite:waves.db\"")
-    val state = new SQLiteWriter(createDataSource(config))
+    val config = ConfigFactory.parseString("url = \"jdbc:postgresql:waves\"")
+    val state = new PostgresWriter(createDataSource(config))
 
     val history = HistoryWriterImpl(settings.blockchainSettings.blockchainFile, new ReentrantReadWriteLock(true),
       settings.blockchainSettings.functionalitySettings, settings.featuresSettings).get
