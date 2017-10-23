@@ -87,7 +87,7 @@ object BlockDiffer extends ScorexLogging {
       implicit val g: Semigroup[Map[ByteStr, Long]] = (x: Map[ByteStr, Long], y: Map[ByteStr, Long]) =>
         x.keySet.map { k =>
           val sum = safeSum(x.getOrElse(k, 0L), y.getOrElse(k, 0L))
-          require(sum >= 0, s"Negative balance $sum for asset X'${BigInt(k.arr).toString(16)}', available: ${y.getOrElse(k, 0L)}")
+          require(sum >= 0, s"Negative balance $sum for asset $k, available: ${x.getOrElse(k, 0L)}")
           k -> sum
         }.toMap
 
@@ -98,8 +98,9 @@ object BlockDiffer extends ScorexLogging {
             Some(WavesBalance(oldPortfolio.regularBalance + portfolioDiff.balance,
               oldPortfolio.effectiveBalance + portfolioDiff.effectiveBalance))
             else None
+          val stateAssetBalances = s.assetBalance(acc)
           val assetBalances: Map[ByteStr, Long] = if (portfolioDiff.assets.isEmpty) Map.empty else {
-            Semigroup.combine(portfolioDiff.assets, s.assetBalance(acc))(g)
+            Semigroup.combine(portfolioDiff.assets, stateAssetBalances)(g)
           }
           acc -> Snapshot(newWavesBalance, assetBalances = assetBalances)
         }

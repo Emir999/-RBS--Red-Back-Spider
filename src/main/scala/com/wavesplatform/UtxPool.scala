@@ -66,7 +66,7 @@ class UtxPool(time: Time,
           val res = for {
             _ <- Either.cond(transactions.size < utxSettings.maxSize, (), GenericError("Transaction pool size limit is reached"))
             _ <- feeCalculator.enoughFee(tx)
-            diff <- TransactionDiffer(fs, history.lastBlockTimestamp(), time.correctedTime(), stateReader.height)(stateReader, tx)
+            diff <- TransactionDiffer(fs, history.lastBlockTimestamp, time.correctedTime(), stateReader.height)(stateReader, tx)
           } yield {
             utxPoolSizeStats.increment()
             pessimisticPortfolios.add(tx.id, diff)
@@ -108,7 +108,7 @@ class UtxPool(time: Time,
   def packUnconfirmed(max: Int, sortInBlock: Boolean): Seq[Transaction] = {
     val currentTs = time.correctedTime()
     removeExpired(currentTs)
-    val differ = TransactionDiffer(fs, history.lastBlockTimestamp(), currentTs, stateReader.height) _
+    val differ = TransactionDiffer(fs, history.lastBlockTimestamp, currentTs, stateReader.height) _
     val (invalidTxs, reversedValidTxs, _) = transactions
       .values.asScala.toSeq
       .sorted(TransactionsOrdering.InUTXPool)

@@ -7,7 +7,9 @@ import javax.ws.rs.Path
 import akka.http.scaladsl.marshalling.ToResponseMarshallable
 import akka.http.scaladsl.model.StatusCodes
 import akka.http.scaladsl.server.Route
+import com.typesafe.config.{ConfigObject, ConfigRenderOptions}
 import com.wavesplatform.UtxPool
+import com.wavesplatform.mining.{Miner, MinerDebugInfo}
 import com.wavesplatform.network.{LocalScoreChanged, PeerDatabase, PeerInfo, _}
 import com.wavesplatform.settings.RestAPISettings
 import com.wavesplatform.state2.reader.StateReader
@@ -18,20 +20,16 @@ import io.swagger.annotations._
 import play.api.libs.json._
 import scorex.account.Address
 import scorex.api.http._
+import scorex.block.Block.BlockId
 import scorex.crypto.encode.Base58
 import scorex.crypto.hash.FastCryptographicHash
 import scorex.transaction._
 import scorex.wallet.Wallet
+import scorex.waves.http.DebugApiRoute._
 
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.Future
 import scala.util.control.NonFatal
-import DebugApiRoute._
-import com.typesafe.config.{ConfigObject, ConfigRenderOptions}
-import com.wavesplatform.mining.Miner
-import com.wavesplatform.mining.MinerDebugInfo
-import scorex.block.Block.BlockId
-
 import scala.util.{Failure, Success}
 
 
@@ -132,9 +130,9 @@ case class DebugApiRoute(settings: RestAPISettings,
   private def rollbackToBlock(blockId: ByteStr, returnTransactionsToUtx: Boolean): Future[ToResponseMarshallable] = Future {
     blockchainUpdater.removeAfter(blockId) match {
       case Right(blocks) =>
-        allChannels.broadcast(LocalScoreChanged(history.score()))
+        allChannels.broadcast(LocalScoreChanged(history.score))
         if (returnTransactionsToUtx) {
-          blocks.flatMap(_.transactionData).foreach(tx => utxStorage.putIfNew(tx))
+          blocks.foreach(tx => utxStorage.putIfNew(tx))
         }
         miner.scheduleMining()
         Json.obj("BlockId" -> blockId.toString): ToResponseMarshallable

@@ -31,7 +31,7 @@ case class ActivationApiRoute(settings: RestAPISettings,
   ))
   def status: Route = (get & path("status")) {
 
-    val height = history.height()
+    val height = history.height
     val activationInterval = functionalitySettings.featureCheckBlocksPeriod
 
     complete(Json.toJson(

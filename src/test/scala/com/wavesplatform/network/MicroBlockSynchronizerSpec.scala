@@ -4,6 +4,7 @@ import com.wavesplatform.TransactionGen
 import com.wavesplatform.settings.SynchronizationSettings.MicroblockSynchronizerSettings
 import com.wavesplatform.state2.ByteStr
 import io.netty.channel.embedded.EmbeddedChannel
+import monix.execution.Scheduler.Implicits.global
 import monix.reactive.subjects.ConcurrentSubject
 import org.mockito.Mockito
 import org.scalamock.scalatest.MockFactory
@@ -15,7 +16,6 @@ import scorex.account.PublicKeyAccount
 import scorex.block.MicroBlock
 import scorex.lagonaki.mocks.TestBlock
 import scorex.transaction.NgHistory
-import monix.execution.Scheduler.Implicits.global
 
 import scala.concurrent.duration.DurationInt
 
@@ -47,7 +47,7 @@ class MicroBlockSynchronizerSpec extends FreeSpec
     val nextBlockSig = ByteStr("1".getBytes)
 
     val history = Mockito.mock(classOf[NgHistory])
-    Mockito.doReturn(Some(lastBlockSig)).when(history).lastBlockId()
+    Mockito.doReturn(Some(lastBlockSig)).when(history).lastBlockId
 
     val channel = new EmbeddedChannel(new MicroBlockSynchronizer(settings, history, PeerDatabase.NoOp, ConcurrentSubject.publish[ByteStr], microBlockOwners))
     channel.writeInbound(MicroBlockInv(TestBlock.defaultSigner, nextBlockSig, lastBlockSig))
@@ -66,7 +66,7 @@ class MicroBlockSynchronizerSpec extends FreeSpec
     val nextBlockSig = ByteStr("1".getBytes)
 
     val history = Mockito.mock(classOf[NgHistory])
-    Mockito.doReturn(Some(lastBlockSig)).when(history).lastBlockId()
+    Mockito.doReturn(Some(lastBlockSig)).when(history).lastBlockId
 
     val synchronizer = new MicroBlockSynchronizer(settings, history, PeerDatabase.NoOp, ConcurrentSubject.publish[ByteStr], microBlockOwners)
     val channel1 = new EmbeddedChannel(synchronizer)
@@ -94,7 +94,7 @@ class MicroBlockSynchronizerSpec extends FreeSpec
       val nextBlockSig = ByteStr("1".getBytes)
 
       val history = Mockito.mock(classOf[NgHistory])
-      Mockito.doReturn(Some(lastBlockSig)).when(history).lastBlockId()
+      Mockito.doReturn(Some(lastBlockSig)).when(history).lastBlockId
 
       val synchronizer = new MicroBlockSynchronizer(settings, history, PeerDatabase.NoOp, ConcurrentSubject.publish[ByteStr], microBlockOwners)
       val channel = new EmbeddedChannel(synchronizer)
@@ -135,7 +135,7 @@ class MicroBlockSynchronizerSpec extends FreeSpec
       val nextBlockSig = ByteStr("1".getBytes)
 
       val history = Mockito.mock(classOf[NgHistory])
-      Mockito.doReturn(Some(lastBlockSig)).when(history).lastBlockId()
+      Mockito.doReturn(Some(lastBlockSig)).when(history).lastBlockId
 
       val synchronizer = new MicroBlockSynchronizer(settings, history, PeerDatabase.NoOp, ConcurrentSubject.publish[ByteStr], microBlockOwners)
       val channel1 = new EmbeddedChannel(synchronizer)
@@ -179,7 +179,7 @@ class MicroBlockSynchronizerSpec extends FreeSpec
     val nextBlockSig2 = ByteStr("1'".getBytes)
 
     val history = Mockito.mock(classOf[NgHistory])
-    Mockito.doReturn(Some(lastBlockSig)).when(history).lastBlockId()
+    Mockito.doReturn(Some(lastBlockSig)).when(history).lastBlockId
 
     val synchronizer = new MicroBlockSynchronizer(settings, history, PeerDatabase.NoOp, ConcurrentSubject.publish[ByteStr], microBlockOwners)
     val channel = new EmbeddedChannel(synchronizer)
@@ -219,7 +219,7 @@ class MicroBlockSynchronizerSpec extends FreeSpec
     val nextBlockSig2 = ByteStr("2".getBytes)
 
     val history = Mockito.mock(classOf[NgHistory])
-    Mockito.doReturn(Some(lastBlockSig)).when(history).lastBlockId()
+    Mockito.doReturn(Some(lastBlockSig)).when(history).lastBlockId
 
     val events = ConcurrentSubject.publish[ByteStr]
     val synchronizer = new MicroBlockSynchronizer(settings, history, PeerDatabase.NoOp, events, microBlockOwners)
@@ -262,7 +262,7 @@ class MicroBlockSynchronizerSpec extends FreeSpec
       val lastBlockSig = ByteStr("0".getBytes)
 
       val history = Mockito.mock(classOf[NgHistory])
-      Mockito.doReturn(Some(lastBlockSig)).when(history).lastBlockId()
+      Mockito.doReturn(Some(lastBlockSig)).when(history).lastBlockId
 
       val events = ConcurrentSubject.publish[ByteStr]
       val synchronizer = new MicroBlockSynchronizer(settings, history, PeerDatabase.NoOp, events, microBlockOwners)
@@ -303,7 +303,7 @@ class MicroBlockSynchronizerSpec extends FreeSpec
 
       sigPairs.foreach {
         case (prev, next) =>
-          Mockito.doReturn(Some(prev)).when(history).lastBlockId()
+          Mockito.doReturn(Some(prev)).when(history).lastBlockId
 
           channel.writeInbound(MicroBlockInv(TestBlock.defaultSigner, next, prev))
           channel.flushInbound()

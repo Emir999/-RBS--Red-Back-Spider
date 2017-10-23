@@ -131,11 +131,11 @@ class BlockDifferTest extends FreeSpecLike with Matchers with BlockGen {
     }
     zipWithPrev(preconditions).foreach { wp =>
       val preconditionDiff = differ(state, wp).explicitGet()
-      state.applyBlockDiff(preconditionDiff, ???, ???)
+      state.append(preconditionDiff, ???)
     }
 
     val totalDiff1 = differ(state, (preconditions.lastOption, block)).explicitGet()
-    state.applyBlockDiff(totalDiff1, ???, ???)
+    state.append(totalDiff1, ???)
     assertion(totalDiff1, state)
 
     val preconditionDiff = BlockDiffer.unsafeDiffMany(fs, fp, newState(), None)(preconditions)

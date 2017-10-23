@@ -10,12 +10,42 @@ import com.wavesplatform.state2.{AssetDescription, AssetInfo, BlockDiff, ByteStr
 import scalikejdbc.{DB, DBSession, using, _}
 import scorex.account.{Address, AddressOrAlias, Alias, PublicKeyAccount}
 import scorex.block.Block
+import scorex.transaction._
 import scorex.transaction.assets.IssueTransaction
 import scorex.transaction.lease.{LeaseCancelTransaction, LeaseTransaction}
-import scorex.transaction.{CreateAliasTransaction, GenesisTransaction, PaymentTransaction, SignedTransaction}
 
-class SQLiteWriter(ds: DataSource) extends StateReader with StateWriter {
+class SQLiteWriter(ds: DataSource) extends StateReader with StateWriter with History {
   private def readOnly[A](f: DBSession => A): A = using(DB(ds.getConnection))(_.localTx(f))
+
+  override def blockBytes(height: Int) = readOnly { implicit s =>
+    sql"select block_body_bytes from blocks where height = ?"
+      .bind(height)
+      .map(_.get[Array[Byte]](1))
+      .single()
+      .apply()
+  }
+
+  override def blockBytes(blockId: ByteStr) = readOnly { implicit s =>
+    sql"select block_body_bytes from blocks where block_id = ?"
+      .bind(blockId.arr)
+      .map(_.get[Array[Byte]](1))
+      .single()
+      .apply()
+  }
+
+  override def scoreOf(id: ByteStr) = ???
+
+  override def heightOf(blockId: ByteStr) = ???
+
+  override def lastBlockIds(howMany: Int) = ???
+
+  override def score = ???
+
+  override def lastBlock = ???
+
+  override def blockIdsAfter(parentSignature: ByteStr, howMany: Int) = ???
+
+  override def parent(ofBlock: Block, back: Int) = ???
 
   override def nonZeroLeaseBalances = readOnly { implicit s =>
     sql"""with last_balance as (select address, max(height) height from lease_balances group by address)
@@ -222,11 +252,35 @@ class SQLiteWriter(ds: DataSource) extends StateReader with StateWriter {
         .getOrElse(0L)
     }
 
-  override def clear(): Unit = ???
+  override def rollbackTo(targetBlockId: ByteStr) = using(DB(ds.getConnection))(_.localTx { implicit s =>
+    val targetHeight = sql"select height from blocks where block_id = ?"
+      .bind(targetBlockId.arr)
+      .map(_.get[Int](1))
+      .single()
+      .apply()
 
-  override def applyBlockDiff(blockDiff: BlockDiff, block: Block, newHeight: Int): Unit = {
+    targetHeight.fold(Seq.empty[Transaction]) { h =>
+      val recoveredTransactions = sql"select block_data_bytes from blocks where height > ?"
+        .bind(h)
+        .map(_.get[Array[Byte]](1))
+        .list()
+        .apply()
+        .flatMap(Block.parseBytes(_).get.transactionData)
+
+      sql"delete from blocks where height > ?"
+        .bind(h)
+        .update()
+        .apply()
+
+      recoveredTransactions
+    }
+  })
+
+  override def append(blockDiff: BlockDiff, block: Block): Unit = {
     using(DB(ds.getConnection)) { db =>
       db.localTx { implicit s =>
+        val newHeight = sql"select max(height) from blocks".map(_.get[Int](1)).single().apply().fold(1)(_ + 1)
+
         h.set(newHeight)
         for {
           (address, ls) <- blockDiff.snapshots
@@ -352,14 +406,14 @@ class SQLiteWriter(ds: DataSource) extends StateReader with StateWriter {
       } yield Seq(orderId.arr, fillInfo.volume, fillInfo.fee, newHeight)).toSeq: _*)
       .apply()
 
-  private def storeReissuedAssets(blockDiff: BlockDiff, newHeight: Int)(implicit session: DBSession) = {
+  private def storeReissuedAssets(blockDiff: BlockDiff, newHeight: Int)(implicit session: DBSession): Unit = {
     sql"insert into asset_quantity (asset_id, quantity_change, reissuable, height) values (?,?,?,?)"
       .batch(blockDiff.
         txsDiff.issuedAssets.map { case (id, ai) => Seq(id.arr, ai.volume, ai.isReissuable, newHeight) }.toSeq: _*)
       .apply()
   }
 
-  private def storeIssuedAssets(blockDiff: BlockDiff, newHeight: Int)(implicit session: DBSession) = {
+  private def storeIssuedAssets(blockDiff: BlockDiff, newHeight: Int)(implicit session: DBSession): Unit = {
     val issuedAssetParams = blockDiff.txsDiff.transactions.values.collect {
       case (_, i: IssueTransaction, _) =>
         Seq(i.assetId.arr, i.sender.publicKey, i.decimals, i.name, i.description, newHeight): Seq[Any]
@@ -375,8 +429,8 @@ class SQLiteWriter(ds: DataSource) extends StateReader with StateWriter {
   }
 
   private def storeBlocks(block: Block, newHeight: Int)(implicit session: DBSession): Unit =
-    sql"""insert into blocks (height, block_id, block_timestamp, generator_address, block_data_bytes)
-         |values (?,?,?,?,?)""".stripMargin
+    sql"""insert into blocks (height, block_id, block_timestamp, generator_address, block_data_bytes, cumulative_score)
+         |values (?,?,?,?,?,?)""".stripMargin
       .bind(newHeight, block.uniqueId.arr, new Timestamp(block.timestamp),
         block.signerData.generator.toAddress.stringRepr, block.bytes)
       .update()

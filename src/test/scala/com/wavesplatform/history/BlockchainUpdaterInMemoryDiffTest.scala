@@ -31,12 +31,12 @@ class BlockchainUpdaterInMemoryDiffTest extends PropSpec with PropertyChecks wit
       val mastersBalanceAfterPayment1 = domain.stateReader.wavesBalance(genesis.recipient).regularBalance
       mastersBalanceAfterPayment1 shouldBe (ENOUGH_AMT - payment1.amount - payment1.fee)
 
-      domain.history.height() shouldBe MinInMemoryDiffSize * 2 + 1
+      domain.history.height shouldBe MinInMemoryDiffSize * 2 + 1
       domain.stateReader.height shouldBe MinInMemoryDiffSize * 2 + 1
 
       domain.blockchainUpdater.processBlock(blockTriggersCompactification).explicitGet()
 
-      domain.history.height() shouldBe MinInMemoryDiffSize * 2 + 2
+      domain.history.height shouldBe MinInMemoryDiffSize * 2 + 2
       domain.stateReader.height shouldBe MinInMemoryDiffSize * 2 + 2
 
       val mastersBalanceAfterPayment1AndPayment2 = domain.stateReader.wavesBalance(genesis.recipient).regularBalance
@@ -60,7 +60,7 @@ class BlockchainUpdaterInMemoryDiffTest extends PropSpec with PropertyChecks wit
       domain.blockchainUpdater.removeAfter(payment1Block.uniqueId)
       domain.blockchainUpdater.processBlock(blockTriggersCompactification).explicitGet()
 
-      domain.history.height() shouldBe MinInMemoryDiffSize * 2 + 1
+      domain.history.height shouldBe MinInMemoryDiffSize * 2 + 1
       domain.stateReader.height shouldBe MinInMemoryDiffSize * 2 + 1
 
       val mastersBalanceAfterPayment1AndPayment2 = domain.stateReader.wavesBalance(genesis.recipient).regularBalance

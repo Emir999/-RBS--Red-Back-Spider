@@ -54,7 +54,7 @@ class HistoryReplier(history: NgHistory, settings: SynchronizationSettings) exte
       }
 
     case _: Handshake =>
-      ctx.writeAndFlush(LocalScoreChanged(history.score()))
+      ctx.writeAndFlush(LocalScoreChanged(history.score))
 
     case _ => super.channelRead(ctx, msg)
   }

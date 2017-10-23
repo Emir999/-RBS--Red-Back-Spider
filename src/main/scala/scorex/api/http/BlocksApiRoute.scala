@@ -57,7 +57,7 @@ case class BlocksApiRoute(settings: RestAPISettings, checkpointsSettings: Checkp
   ))
   def child: Route = (path("child" / Segment) & get) { encodedSignature =>
     withBlock(history, encodedSignature) { block =>
-      complete(history.child(block).map(_.json).getOrElse[JsObject](
+      complete(history.heightOf(block.uniqueId).flatMap(history.blockAt).map(_.json).getOrElse[JsObject](
         Json.obj("status" -> "error", "details" -> "No child blocks")))
     }
   }
@@ -96,7 +96,7 @@ case class BlocksApiRoute(settings: RestAPISettings, checkpointsSettings: Checkp
   @Path("/height")
   @ApiOperation(value = "Height", notes = "Get blockchain height", httpMethod = "GET")
   def height: Route = (path("height") & get) {
-    complete(Json.obj("height" -> history.height()))
+    complete(Json.obj("height" -> history.height))
   }
 
   @Path("/at/{height}")
@@ -131,7 +131,7 @@ case class BlocksApiRoute(settings: RestAPISettings, checkpointsSettings: Checkp
   @Path("/last")
   @ApiOperation(value = "Last", notes = "Get last block data", httpMethod = "GET")
   def last: Route = (path("last") & get) {
-    val height = history.height()
+    val height = history.height
     val lastBlock = history.blockAt(height).get
     complete(lastBlock.json + ("height" -> Json.toJson(height)))
   }

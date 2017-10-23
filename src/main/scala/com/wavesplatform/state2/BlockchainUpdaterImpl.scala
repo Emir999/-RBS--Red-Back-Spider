@@ -36,16 +36,7 @@ class BlockchainUpdaterImpl private(persisted: StateWriter with StateReader,
 
   override val lastBlockId: ConcurrentSubject[ByteStr, ByteStr] = ConcurrentSubject.publish[ByteStr]
 
-  private def unsafeDiffByRange(state: StateReader, from: Int, to: Int): BlockDiff = {
-    val blocks = measureLog(s"Reading blocks from $from up to $to") {
-      Range(from, to).map(historyWriter.blockBytes).par.map(b => Block.parseBytes(b.get).get).seq
-    }
-    measureLog(s"Building diff from $from up to $to") {
-      BlockDiffer.unsafeDiffMany(settings.blockchainSettings.functionalitySettings, featureProvider, state, historyWriter.blockAt(from - 1))(blocks)
-    }
-  }
-
-  private def currentPersistedBlocksState: StateReader = ???
+  private def currentPersistedBlocksState: StateReader = persisted
 
   def bestLiquidState: StateReader = read { implicit l => composite(currentPersistedBlocksState, () => ngState().map(_.bestLiquidDiff).orEmpty) }
 
@@ -54,7 +45,7 @@ class BlockchainUpdaterImpl private(persisted: StateWriter with StateReader,
   private def displayFeatures(s: Set[Short]): String = s"FEATURE${if (s.size > 1) "S"} ${s.mkString(", ")} ${if (s.size > 1) "WERE" else "WAS"}"
 
   private def featuresApprovedWithBlock(block: Block): Set[Short] = {
-    val height = historyWriter.height() + 1
+    val height = historyWriter.height + 1
 
     if (height % settings.blockchainSettings.functionalitySettings.featureCheckBlocksPeriod == 0) {
 
@@ -91,7 +82,7 @@ class BlockchainUpdaterImpl private(persisted: StateWriter with StateReader,
   }
 
   override def processBlock(block: Block): Either[ValidationError, DiscardedTransactions] = write { implicit l =>
-    val height = historyWriter.height()
+    val height = historyWriter.height
     val notImplementedFeatures = featureProvider.activatedFeatures(height).diff(BlockchainFeatures.implemented)
 
     Either.cond(!settings.featuresSettings.autoShutdownOnUnsupportedFeature || notImplementedFeatures.isEmpty, (),
@@ -103,7 +94,9 @@ class BlockchainUpdaterImpl private(persisted: StateWriter with StateReader,
             val logDetails = s"The referenced block(${block.reference})" +
               s" ${if (historyWriter.contains(block.reference)) "exits, it's not last persisted" else "doesn't exist"}"
             Left(BlockAppendError(s"References incorrect or non-existing block: " + logDetails, block))
-          case _ => BlockDiffer.fromBlock(settings.blockchainSettings.functionalitySettings, featureProvider, currentPersistedBlocksState, historyWriter.lastBlock, block).map(d => Some((d, Seq.empty[Transaction])))
+          case _ =>
+            BlockDiffer.fromBlock(settings.blockchainSettings.functionalitySettings, featureProvider, currentPersistedBlocksState, historyWriter.lastBlock, block)
+              .map(d => Some((d, Seq.empty[Transaction])))
         }
       case Some(ng) if ng.base.reference == block.reference =>
         if (block.blockScore > ng.base.blockScore) {
@@ -132,10 +125,13 @@ class BlockchainUpdaterImpl private(persisted: StateWriter with StateReader,
             microBlockForkStats.increment()
             microBlockForkHeightStats.record(discarded.size)
           }
-          historyWriter.appendBlock(referencedForgedBlock, ng.acceptedFeatures)(BlockDiffer.fromBlock(settings.blockchainSettings.functionalitySettings, historyReader,
+
+          val diff = BlockDiffer.fromBlock(settings.blockchainSettings.functionalitySettings, historyReader,
             composite(currentPersistedBlocksState, () => referencedLiquidDiff.copy(heightDiff = 1)),
-            Some(referencedForgedBlock), block))
-            .map { hardenedDiff =>
+            Some(referencedForgedBlock), block)
+            diff.foreach(persisted.append(_, block))
+
+          diff.map { hardenedDiff =>
               TxsInBlockchainStats.record(ng.transactions.size)
               topMemoryDiff.transform(Monoid.combine(_, referencedLiquidDiff))
               Some((hardenedDiff, discarded.flatMap(_.transactionData)))
@@ -145,68 +141,26 @@ class BlockchainUpdaterImpl private(persisted: StateWriter with StateReader,
           log.error(errorText)
           Left(BlockAppendError(errorText, block))
         }
-    }).map {
-      case Some((newBlockDiff, discacrded)) =>
-        val height = historyWriter.height() + 1
-        ngState.set(Some(NgState(block, newBlockDiff, 0L, featuresApprovedWithBlock(block))))
-        historyReader.lastBlockId().foreach(lastBlockId.onNext)
-        log.info(s"$block appended. New height: $height)")
-        discacrded
-      case None => Seq.empty
-    })
+    }).map { case Some((newBlockDiff, discarded)) =>
+      val height = historyWriter.height + 1
+      ngState.set(Some(NgState(block, newBlockDiff, 0L, featuresApprovedWithBlock(block))))
+      historyReader.lastBlock.foreach(b =>lastBlockId.onNext(b.uniqueId))
+      log.info(s"$block appended. New height: $height)")
+      discarded
+    case None => Seq.empty})
   }
 
-  override def removeAfter(blockId: ByteStr): Either[ValidationError, Seq[Block]] = write { implicit l =>
+  override def removeAfter(blockId: ByteStr): Either[ValidationError, DiscardedTransactions] = write { implicit l =>
     val ng = ngState()
     if (ng.exists(_.contains(blockId))) {
       log.trace("Resetting liquid block, no rollback is necessary")
       Right(Seq.empty)
     } else {
-      historyWriter.heightOf(blockId) match {
-        case None =>
-          log.warn(s"removeAfter nonexistent block $blockId")
-          Left(GenericError(s"Failed to rollback to nonexistent block $blockId"))
-        case Some(height) =>
-          val discardedNgBlock = ng.map(_.bestLiquidBlock)
-          ngState.set(None)
+      val discardedNgTransactions = ng.fold(Seq.empty[Transaction])(_.bestLiquidBlock.transactionData)
+      ngState.set(None)
+      val recoveredTransactions = persisted.rollbackTo(blockId)
 
-          val baseRolledBack = height < historyWriter.height()
-          val discardedHistoryBlocks = if (baseRolledBack) {
-            val discarded = {
-              var buf = Seq.empty[Block]
-              while (historyWriter.height > height)
-                buf = historyWriter.discardBlock().toSeq ++ buf
-              buf
-            }
-            if (height < persisted.height) {
-              log.info(s"Rollback to h=$height requested. Persisted height=${persisted.height}, will drop state and reapply blockchain now")
-              persisted.clear()
-//              updatePersistedAndInMemory()
-            } else {
-              if (bestLiquidState.height != height) {
-                val persistedPlusBottomHeight = persisted.height
-                if (height > persistedPlusBottomHeight) {
-                  val newTopDiff = unsafeDiffByRange(persisted, persistedPlusBottomHeight + 1, height + 1)
-                  topMemoryDiff.set(newTopDiff)
-                } else {
-                  topMemoryDiff.set(BlockDiff.empty)
-                  if (height < persistedPlusBottomHeight) {
-                    //                    bottomMemoryDiff.set(unsafeDiffByRange(persisted, persisted.height + 1, height + 1))
-                  }
-                }
-              }
-            }
-            discarded
-          } else {
-            log.debug(s"No rollback in history is necessary")
-            Seq.empty[Block]
-          }
-
-          val totalDiscardedBlocks: Seq[Block] = discardedHistoryBlocks ++ discardedNgBlock.toSeq
-          if (totalDiscardedBlocks.nonEmpty) lastBlockId.onNext(blockId)
-          TxsInBlockchainStats.record(-totalDiscardedBlocks.size)
-          Right(totalDiscardedBlocks)
-      }
+      Right(recoveredTransactions ++ discardedNgTransactions)
     }
   }
 
@@ -229,7 +183,7 @@ class BlockchainUpdaterImpl private(persisted: StateWriter with StateReader,
               _ <- Signed.validateSignatures(microBlock)
               diff <- BlockDiffer.fromMicroBlock(settings.blockchainSettings.functionalitySettings, historyReader, composite(currentPersistedBlocksState,
                 () => ng.bestLiquidDiff.copy(snapshots = Map.empty)),
-                historyWriter.lastBlock.map(_.timestamp), microBlock, ng.base.timestamp)
+                historyWriter.lastBlockTimestamp, microBlock, ng.base.timestamp)
             } yield {
               log.info(s"$microBlock appended")
               ngState.set(Some(ng + (microBlock, Monoid.combine(ng.bestLiquidDiff, diff), System.currentTimeMillis())))
@@ -241,7 +195,7 @@ class BlockchainUpdaterImpl private(persisted: StateWriter with StateReader,
 
   override def debugInfo(): StateDebugInfo = read { implicit l =>
     StateDebugInfo(persisted = HashInfo(height = persisted.height, hash = persisted.accountPortfoliosHash),
-      top = HashInfo(height = topMemoryDiff().heightDiff, hash = Hash.accountPortfolios(topMemoryDiff().txsDiff.portfolios)),
+      top = ???,
       bottom = ???,
       microBaseHash = ngState().map(ng => Hash.accountPortfolios(ng.diffs(ng.base.uniqueId)._1.txsDiff.portfolios))
     )

@@ -27,7 +27,7 @@ package object diffs {
 
     preconditions.foreach { precondition =>
       val preconditionDiff = differ(state, precondition).explicitGet()
-      state.applyBlockDiff(preconditionDiff, ???, 0)
+      state.append(preconditionDiff, ???)
     }
     val totalDiff1 = differ(state, block)
     assertion(totalDiff1)
@@ -48,11 +48,11 @@ package object diffs {
 
     zipWithPrev(preconditions).foreach { wp =>
       val preconditionDiff = differ(state, wp).explicitGet()
-      state.applyBlockDiff(preconditionDiff, ???, ???)
+      state.append(preconditionDiff, ???)
     }
 
     val totalDiff1 = differ(state, (preconditions.lastOption, block)).explicitGet()
-    state.applyBlockDiff(totalDiff1, ???, ???)
+    state.append(totalDiff1, ???)
     assertion(totalDiff1, state)
 
     val preconditionDiff = BlockDiffer.unsafeDiffMany(fs, ???, newState(), None)(preconditions)
@@ -71,10 +71,10 @@ package object diffs {
 
     preconditions.foreach { precondition =>
       val preconditionDiff = differ(state, precondition).explicitGet()
-      state.applyBlockDiff(preconditionDiff, ???, 0)
+      state.append(preconditionDiff, ???)
     }
     val totalDiff1 = differ(state, block).explicitGet()
-    state.applyBlockDiff(totalDiff1, ???, 0)
+    state.append(totalDiff1, ???)
     assertion(totalDiff1, state)
 
     val preconditionDiff = BlockDiffer.unsafeDiffMany(fs, fp, newState(), None)(preconditions)

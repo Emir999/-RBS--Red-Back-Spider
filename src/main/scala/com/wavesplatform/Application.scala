@@ -182,7 +182,6 @@ class Application(val actorSystem: ActorSystem, val settings: WavesSettings, con
         .failed.map(e => log.error("Failed to terminate actor system: " + e.getMessage))
       log.debug("Closing storage")
       wallet.close()
-      history.close()
       log.info("Shutdown complete")
     }
   }

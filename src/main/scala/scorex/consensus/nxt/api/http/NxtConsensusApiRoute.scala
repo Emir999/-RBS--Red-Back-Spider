@@ -72,7 +72,7 @@ case class NxtConsensusApiRoute(
   def basetarget: Route = (path("basetarget") & get) {
     complete(Json.obj(
       "baseTarget" -> history.lastBlock.get.consensusData.baseTarget,
-      "score" -> history.score().toString()
+      "score" -> history.score.toString()
     )
     )
   }

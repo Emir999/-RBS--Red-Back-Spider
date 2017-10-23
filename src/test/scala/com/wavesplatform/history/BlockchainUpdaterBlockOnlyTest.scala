@@ -30,13 +30,13 @@ class BlockchainUpdaterBlockOnlyTest extends PropSpec with PropertyChecks with D
     scenario(preconditionsAndPayments) { case (domain, (genesis, payment, payment2)) =>
       val blocks = chainBlocks(Seq(Seq(genesis), Seq(payment), Seq(payment2)))
       domain.blockchainUpdater.processBlock(blocks.head) shouldBe 'right
-      domain.history.height() shouldBe 1
+      domain.history.height shouldBe 1
       domain.stateReader.height shouldBe 1
       domain.blockchainUpdater.processBlock(blocks(1)) shouldBe 'right
-      domain.history.height() shouldBe 2
+      domain.history.height shouldBe 2
       domain.stateReader.height shouldBe 2
       domain.blockchainUpdater.removeAfter(blocks.head.uniqueId) shouldBe 'right
-      domain.history.height() shouldBe 1
+      domain.history.height shouldBe 1
       domain.stateReader.height shouldBe 1
       domain.blockchainUpdater.processBlock(blocks(1)) shouldBe 'right
       domain.blockchainUpdater.processBlock(blocks(2)) shouldBe 'right

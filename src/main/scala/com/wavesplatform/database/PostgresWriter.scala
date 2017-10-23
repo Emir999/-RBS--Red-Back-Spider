@@ -86,7 +86,7 @@ class PostgresWriter(ds: DataSource) extends StateReader with StateWriter {
              |and ab.asset_id = lh.asset_id
              |and ab.address = lh.address""".stripMargin
           .bind(key.address)
-          .map(rs => ByteStr(rs.get[Array[Byte]](1)) -> rs.get[Long](2))
+          .map(rs => ByteStr.decodeBase58(rs.get[String](1)).get -> rs.get[Long](2))
           .list()
           .apply()
           .toMap
@@ -101,7 +101,7 @@ class PostgresWriter(ds: DataSource) extends StateReader with StateWriter {
     .build(new CacheLoader[ByteStr, Option[AssetInfo]] {
       override def load(key: ByteStr) = readOnly { implicit s =>
         sql"select reissuable, quantity from asset_quantity where asset_id = ? order by height desc limit 1"
-          .bind(key.arr)
+          .bind(key.base58)
           .map { rs => AssetInfo(rs.get[Boolean](1), rs.get[Long](2)) }
           .single()
           .apply()
@@ -118,7 +118,7 @@ class PostgresWriter(ds: DataSource) extends StateReader with StateWriter {
              |where ai.asset_id = aq.asset_id
              |and ai.asset_id = ?
              |group by ai.issuer, ai.name, ai.decimals""".stripMargin
-          .bind(key.arr)
+          .bind(key.base58)
           .map { rs => AssetDescription(
             PublicKeyAccount(rs.get[Array[Byte]](1)),
             rs.get[Array[Byte]](2),
@@ -141,8 +141,8 @@ class PostgresWriter(ds: DataSource) extends StateReader with StateWriter {
 
   override def paymentTransactionIdByHash(hash: ByteStr) = readOnly { implicit s =>
     sql"select * from payment_transactions where tx_hash = ?"
-      .bind(hash.arr)
-      .map(rs => ByteStr(rs.get[Array[Byte]](1)))
+      .bind(hash.base58)
+      .map(rs => ByteStr.decodeBase58(rs.get[String](1)).get)
       .single()
       .apply()
   }
@@ -165,7 +165,7 @@ class PostgresWriter(ds: DataSource) extends StateReader with StateWriter {
 
   override def activeLeases = readOnly { implicit s =>
     sql"select lease_id from lease_status group by lease_id having bool_and(active)"
-      .map(rs => ByteStr(rs.get[Array[Byte]](1)))
+      .map(rs => ByteStr.decodeBase58(rs.get[String](1)).get)
       .list()
       .apply()
   }
@@ -175,7 +175,7 @@ class PostgresWriter(ds: DataSource) extends StateReader with StateWriter {
          |select lease_id, bool_and(active) active from lease_status where lease_id = ? group by lease_id)
          |select li.*, tl.active from lease_info li, this_lease_status tl
          |where li.lease_id = tl.lease_id""".stripMargin
-      .bind(leaseId.arr)
+      .bind(leaseId.base58)
       .map(rs => LeaseDetails(
         PublicKeyAccount(rs.get[Array[Byte]](2)),
         AddressOrAlias.fromString(rs.get[String](3)).right.get,
@@ -200,7 +200,7 @@ class PostgresWriter(ds: DataSource) extends StateReader with StateWriter {
          |left join filled_quantity fq on tho.order_id = fq.order_id
          |order by fq.height desc
          |limit 1""".stripMargin
-      .bind(orderId.arr)
+      .bind(orderId.base58)
       .map(rs => OrderFillInfo(rs.get[Long](1), rs.get[Long](2)))
       .single()
       .apply()
@@ -225,11 +225,11 @@ class PostgresWriter(ds: DataSource) extends StateReader with StateWriter {
         .getOrElse(0L)
     }
 
-  override def clear(): Unit = ???
-
-  override def applyBlockDiff(blockDiff: BlockDiff, block: Block, newHeight: Int): Unit = {
+  override def append(blockDiff: BlockDiff, block: Block): Unit = {
     using(DB(ds.getConnection)) { db =>
       db.localTx { implicit s =>
+        val newHeight = sql"select coalesce(max(height), 0) from blocks".map(_.get[Int](1)).single().apply().fold(1)(_ + 1)
+
         h.set(newHeight)
         for {
           (address, ls) <- blockDiff.snapshots
@@ -250,8 +250,8 @@ class PostgresWriter(ds: DataSource) extends StateReader with StateWriter {
 
         sql"insert into lease_status (lease_id, active, height) values (?,?,?)"
           .batch(blockDiff.txsDiff.transactions.collect {
-            case (_, (_, lt: LeaseTransaction, _)) => Seq(lt.id.arr, true, newHeight)
-            case (_, (_, lc: LeaseCancelTransaction, _)) => Seq(lc.leaseId.arr, false, newHeight)
+            case (_, (_, lt: LeaseTransaction, _)) => Seq(lt.id.base58, true, newHeight)
+            case (_, (_, lc: LeaseCancelTransaction, _)) => Seq(lc.leaseId.base58, false, newHeight)
           }.toSeq: _*)
           .apply()
 
@@ -300,9 +300,9 @@ class PostgresWriter(ds: DataSource) extends StateReader with StateWriter {
         (_, (_, tx, addresses)) <- blockDiff.txsDiff.transactions
         address <- addresses
       } yield tx match {
-        case pt: PaymentTransaction => Seq(address.address, pt.hash, pt.signature.arr, newHeight)
-        case t: SignedTransaction => Seq(address.address, t.id.arr, t.signature.arr, newHeight)
-        case gt: GenesisTransaction => Seq(address.address, gt.id.arr, gt.signature.arr, newHeight)
+        case pt: PaymentTransaction => Seq(address.address, ByteStr(pt.hash).base58, pt.signature.base58, newHeight)
+        case t: SignedTransaction => Seq(address.address, t.id.base58, t.signature.base58, newHeight)
+        case gt: GenesisTransaction => Seq(address.address, gt.id.base58, gt.signature.base58, newHeight)
       }).toSeq: _*)
       .apply()
   }
@@ -311,8 +311,8 @@ class PostgresWriter(ds: DataSource) extends StateReader with StateWriter {
     val assetBalanceParams = for {
       (address, ls) <- blockDiff.snapshots
       (assetId, balance) <- ls.assetBalances
-      _ = require(balance >= 0, s"Balance $balance <= 0 for address X'0${BigInt(address.bytes.arr).toString(16)}' asset X'${BigInt(assetId.arr).toString(16)}'")
-    } yield Seq(address.address, assetId.arr, balance, newHeight): Seq[Any]
+      _ = require(balance >= 0, s"Balance $balance <= 0 for address $address asset $assetId")
+    } yield Seq(address.address, assetId.base58, balance, newHeight): Seq[Any]
     sql"insert into asset_balances (address, asset_id, balance, height) values (?,?,?,?)"
       .batch(assetBalanceParams.toSeq: _*)
       .apply()
@@ -322,7 +322,7 @@ class PostgresWriter(ds: DataSource) extends StateReader with StateWriter {
     sql"insert into lease_info (lease_id, sender, recipient, amount, height) values (?,?,?,?,?)"
       .batch(blockDiff.txsDiff.transactions.collect {
         case (_, (_, lt: LeaseTransaction, _)) =>
-          Seq(lt.id.arr, lt.sender.publicKey, lt.recipient.stringRepr, lt.amount, newHeight)
+          Seq(lt.id.base58, lt.sender.publicKey, lt.recipient.stringRepr, lt.amount, newHeight)
       }.toSeq: _*)
       .apply()
   }
@@ -336,7 +336,7 @@ class PostgresWriter(ds: DataSource) extends StateReader with StateWriter {
          |) as latest_filled_quantity order by height desc limit 1""".stripMargin
       .batch((for {
         (orderId, fillInfo) <- blockDiff.txsDiff.orderFills
-      } yield Seq(fillInfo.volume, fillInfo.fee, newHeight, orderId.arr, orderId.arr)).toSeq: _*)
+      } yield Seq(fillInfo.volume, fillInfo.fee, newHeight, orderId.base58, orderId.base58)).toSeq: _*)
       .apply()
 
   private def storeReissuedAssets(blockDiff: BlockDiff, newHeight: Int)(implicit session: DBSession) = {
@@ -348,14 +348,14 @@ class PostgresWriter(ds: DataSource) extends StateReader with StateWriter {
          |order by aq.height desc
          |limit 1""".stripMargin
       .batch(blockDiff.
-        txsDiff.issuedAssets.map { case (id, ai) => Seq(id.arr, ai.volume, ai.isReissuable, newHeight) }.toSeq: _*)
+        txsDiff.issuedAssets.map { case (id, ai) => Seq(id.base58, ai.volume, ai.isReissuable, newHeight) }.toSeq: _*)
       .apply()
   }
 
   private def storeIssuedAssets(blockDiff: BlockDiff, newHeight: Int)(implicit session: DBSession) = {
     val issuedAssetParams = blockDiff.txsDiff.transactions.values.collect {
       case (_, i: IssueTransaction, _) =>
-        Seq(i.assetId.arr, i.sender.publicKey, i.decimals, i.name, i.description, newHeight): Seq[Any]
+        Seq(i.assetId.base58, i.sender.publicKey, i.decimals, i.name, i.description, newHeight): Seq[Any]
     }.toSeq
 
     sql"insert into asset_info(asset_id, issuer, decimals, name, description, height) values (?,?,?,?,?,?)"
@@ -368,10 +368,10 @@ class PostgresWriter(ds: DataSource) extends StateReader with StateWriter {
   }
 
   private def storeBlocks(block: Block, newHeight: Int)(implicit session: DBSession): Unit =
-    sql"""insert into blocks (height, block_id, block_timestamp, generator_address, block_data_bytes)
-         |values (?,?,?,?,?)""".stripMargin
-      .bind(newHeight, block.uniqueId.arr, new Timestamp(block.timestamp),
-        block.signerData.generator.toAddress.stringRepr, block.bytes)
+    sql"""insert into blocks (height, block_id, block_timestamp, generator_address, block_data_bytes, score)
+         |values (?,?,?,?,?,?)""".stripMargin
+      .bind(newHeight, block.uniqueId.base58, new Timestamp(block.timestamp),
+        block.signerData.generator.toAddress.stringRepr, block.bytes, block.blockScore)
       .update()
       .apply()
 
@@ -382,20 +382,20 @@ class PostgresWriter(ds: DataSource) extends StateReader with StateWriter {
 
     blockDiff.txsDiff.transactions.values.foreach {
       case (_, pt: PaymentTransaction, _) =>
-        transactionParams += Seq(pt.hash, pt.signature.arr, transactionTypes(pt.transactionType.id - 1), newHeight)
+        transactionParams += Seq(ByteStr(pt.hash).base58, pt.signature.base58, transactionTypes(pt.transactionType.id - 1), newHeight)
       case (_, t: SignedTransaction, _) =>
-        transactionParams += Seq(t.id.arr, t.signature.arr, transactionTypes(t.transactionType.id - 1), newHeight)
+        transactionParams += Seq(t.id.base58, t.signature.base58, transactionTypes(t.transactionType.id - 1), newHeight)
         t match {
           case et: ExchangeTransaction =>
-            exchangeParams += Seq(et.id.arr, et.buyOrder.assetPair.amountAsset.map(_.arr),
-              et.buyOrder.assetPair.priceAsset.map(_.arr), et.amount, et.price, newHeight)
+            exchangeParams += Seq(et.id.base58, et.buyOrder.assetPair.amountAsset.map(_.base58),
+              et.buyOrder.assetPair.priceAsset.map(_.base58), et.amount, et.price, newHeight)
           case tt: TransferTransaction =>
-            transferParams += Seq(tt.id.arr, tt.sender.address, tt.recipient.stringRepr, tt.assetId.map(_.arr), tt.amount,
-              tt.feeAssetId.map(_.arr), tt.fee, newHeight)
+            transferParams += Seq(tt.id.base58, tt.sender.address, tt.recipient.stringRepr, tt.assetId.map(_.base58), tt.amount,
+              tt.feeAssetId.map(_.base58), tt.fee, newHeight)
           case _ =>
         }
       case (_, gt: GenesisTransaction, _) =>
-        transactionParams += Seq(gt.id.arr, gt.signature.arr, transactionTypes(gt.transactionType.id - 1), newHeight)
+        transactionParams += Seq(gt.id.base58, gt.signature.base58, transactionTypes(gt.transactionType.id - 1), newHeight)
     }
 
     sql"insert into transactions (tx_id, signature, tx_type, tx_json, height) values (?,?,?::tx_type_id_type,'{}'::json,?)"
@@ -410,6 +410,8 @@ class PostgresWriter(ds: DataSource) extends StateReader with StateWriter {
       .batch(transferParams.result(): _*)
       .apply()
   }
+
+  override def rollbackTo(targetBlockId: ByteStr) = ???
 }
 
 object PostgresWriter {

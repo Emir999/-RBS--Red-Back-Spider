@@ -5,8 +5,6 @@ import scorex.transaction.Transaction
 
 
 trait StateWriter {
-  def applyBlockDiff(blockDiff: BlockDiff, block: Block, newHeight: Int): Unit
-  def rollbackToHeight(targetHeight: Int): Seq[Transaction]
-  def clear(): Unit
+  def append(blockDiff: BlockDiff, block: Block): Unit
+  def rollbackTo(targetBlockId: ByteStr): Seq[Transaction]
 }
-

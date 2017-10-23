@@ -12,8 +12,8 @@ import io.netty.channel._
 import monix.eval.Task
 import monix.execution.CancelableFuture
 import monix.execution.schedulers.SchedulerService
-import scorex.block.MicroBlock
 import monix.reactive.Observable
+import scorex.block.MicroBlock
 import scorex.transaction.{NgHistory, Signed}
 import scorex.utils.ScorexLogging
 
@@ -90,7 +90,7 @@ class MicroBlockSynchronizer(settings: MicroblockSynchronizerSettings,
             mbInv
           })
 
-          history.lastBlockId()
+          history.lastBlock.map(_.uniqueId)
             .filter(_ == prevSig && !alreadyRequested(totalSig))
             .foreach(tryDownloadNext)
       }

@@ -5,18 +5,20 @@ import com.wavesplatform.state2.ByteStr
 import scorex.block.Block.BlockId
 import scorex.block.{Block, MicroBlock}
 import scorex.consensus.nxt.NxtLikeConsensusBlockData
-import scorex.transaction.History.{BlockchainScore, BlockMinerInfo}
-import scorex.utils.Synchronized
+import scorex.transaction.History.{BlockMinerInfo, BlockchainScore}
 
 import scala.util.Try
 
-trait History extends Synchronized with AutoCloseable {
+trait History {
+  def height: Int
 
-  def height(): Int
+  def score: BlockchainScore
 
-  def blockAt(height: Int): Option[Block]
+  def lastBlock: Option[Block]
 
   def blockBytes(height: Int): Option[Array[Byte]]
+
+  def blockBytes(blockId: ByteStr): Option[Array[Byte]]
 
   def scoreOf(id: ByteStr): Option[BlockchainScore]
 
@@ -24,9 +26,9 @@ trait History extends Synchronized with AutoCloseable {
 
   def lastBlockIds(howMany: Int): Seq[ByteStr]
 
-  def lastBlockTimestamp(): Option[Long]
+  def blockIdsAfter(parentSignature: ByteStr, howMany: Int): Seq[ByteStr]
 
-  def lastBlockId(): Option[ByteStr]
+  def parent(ofBlock: Block, back: Int): Option[Block]
 }
 
 trait NgHistory extends History {
@@ -69,55 +71,38 @@ object History {
 
   implicit class HistoryExt(history: History) {
 
-    def score(): BlockchainScore = history.read { implicit lock =>
+    def score: BlockchainScore = {
       history.lastBlock.flatMap(last => history.scoreOf(last.uniqueId)).getOrElse(0)
     }
 
-    def isEmpty: Boolean = history.height() == 0
+    def isEmpty: Boolean = history.height == 0
 
     def contains(block: Block): Boolean = history.contains(block.uniqueId)
 
     def contains(signature: ByteStr): Boolean = history.heightOf(signature).isDefined
 
-    def blockById(blockId: ByteStr): Option[Block] = history.read { _ =>
+    def blockById(blockId: ByteStr): Option[Block] = {
       history.heightOf(blockId).flatMap(history.blockAt)
     }
 
-    def blockById(blockId: String): Option[Block] = ByteStr.decodeBase58(blockId).toOption.flatMap(history.blockById)
-
-    def heightOf(block: Block): Option[Int] = history.heightOf(block.uniqueId)
-
-    def confirmations(block: Block): Option[Int] = history.read { _ =>
-      heightOf(block).map(history.height() - _)
-    }
-
-    def lastBlock: Option[Block] = history.read { _ =>
-      history.blockAt(history.height())
-    }
+    def blockAt(height: Int): Option[Block] = history.blockBytes(height).flatMap(bb => Block.parseBytes(bb).toOption)
 
     def averageDelay(block: Block, blockNum: Int): Try[Long] = Try {
       (block.timestamp - parent(block, blockNum).get.timestamp) / blockNum
     }
 
-    def parent(block: Block, back: Int = 1): Option[Block] = history.read { _ =>
+    def parent(block: Block, back: Int = 1): Option[Block] = {
       require(back > 0)
       history.heightOf(block.reference).flatMap(referenceHeight => history.blockAt(referenceHeight - back + 1))
     }
 
-    def child(block: Block): Option[Block] = history.read { _ =>
-      history.heightOf(block.uniqueId).flatMap(h => history.blockAt(h + 1))
-    }
-
-    def lastBlocks(howMany: Int): Seq[Block] = history.read { _ =>
-      (Math.max(1, history.height() - howMany + 1) to history.height()).flatMap(history.blockAt).reverse
-    }
-
-    def blockIdsAfter(parentSignature: ByteStr, howMany: Int): Seq[ByteStr] = history.read { _ =>
-      history.heightOf(parentSignature).map { h =>
-        (h + 1).to(Math.min(history.height(), h + howMany: Int)).flatMap(history.blockAt).map(_.uniqueId)
-      }.getOrElse(Seq())
+    def lastBlocks(howMany: Int): Seq[Block] = {
+      (Math.max(1, history.height - howMany + 1) to history.height).flatMap(history.blockAt).reverse
     }
 
     def genesis: Block = history.blockAt(1).get
+
+    def lastBlockTimestamp = history.lastBlock.map(_.timestamp)
+    def lastBlockId = history.lastBlock.map(_.uniqueId)
   }
 }

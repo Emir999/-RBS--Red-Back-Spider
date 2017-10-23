@@ -49,7 +49,7 @@ class NetworkServer(checkpointService: CheckpointService,
 
   private val scoreObserver = new RemoteScoreObserver(
     settings.synchronizationSettings.scoreTTL,
-    history.lastBlockIds(settings.synchronizationSettings.maxRollback), history.score())
+    history.lastBlockIds(settings.synchronizationSettings.maxRollback), history.score)
 
   private val discardingHandler = new DiscardingHandler(blockchainReadiness)
   private val messageCodec = new MessageCodec(peerDatabase)

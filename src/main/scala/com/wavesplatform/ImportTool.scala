@@ -26,7 +26,7 @@ object ImportTool extends ScorexLogging {
 
     val history = HistoryWriterImpl(settings.blockchainSettings.blockchainFile, new ReentrantReadWriteLock(true),
       settings.blockchainSettings.functionalitySettings, settings.featuresSettings).get
-    val historyHeight = history.height()
+    val historyHeight = history.height
     val persistedHeight = state.height
     println(s"config file: ${new File(args(0)).toPath.toAbsolutePath}")
     println(s"Blockchain height: $historyHeight, file: ${settings.blockchainSettings.blockchainFile}, persistedHeight: $persistedHeight")
@@ -41,7 +41,7 @@ object ImportTool extends ScorexLogging {
         require(Signed.validateSignatures(block).isRight, "invalid block signature")
         BlockDiffer.fromBlock(settings.blockchainSettings.functionalitySettings, history, state, prevBlock, block) match {
           case Right(diff) =>
-            state.applyBlockDiff(diff, block, height)
+            state.append(diff, block)
             Some(block)
           case Left(e) =>
             println(s"at height $height:")

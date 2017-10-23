@@ -3,7 +3,8 @@ create table blocks (
     block_id blob,
     block_timestamp timestamp not null,
     generator_address text,
-    block_data_bytes blob not null
+    block_data_bytes blob not null,
+    cumulative_score blob not null
 );
 
 create index block_generator_address_index on blocks(generator_address);

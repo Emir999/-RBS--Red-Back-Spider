@@ -2,9 +2,8 @@ package com.wavesplatform.mining
 
 import java.util.concurrent.atomic.AtomicBoolean
 
-import com.wavesplatform.features.{BlockchainFeatures, FeatureProvider, BlockchainFeatureStatus}
-import com.wavesplatform.metrics.{BlockStats, Instrumented}
-import com.wavesplatform.metrics.HistogramExt
+import com.wavesplatform.features.{BlockchainFeatureStatus, BlockchainFeatures, FeatureProvider}
+import com.wavesplatform.metrics.{BlockStats, HistogramExt, Instrumented}
 import com.wavesplatform.network._
 import com.wavesplatform.settings.WavesSettings
 import com.wavesplatform.state2._
@@ -79,9 +78,9 @@ class MinerImpl(
   private def ngEnabled: Boolean = featureProvider.featureActivationHeight(BlockchainFeatures.NG.id).exists(history.height > _ + 1)
 
   private def generateOneBlockTask(account: PrivateKeyAccount, balance: Long)(delay: FiniteDuration): Task[Either[String, Block]] = Task {
-    history.read { implicit l =>
+    {
       // should take last block right at the time of mining since microblocks might have been added
-      val height = history.height()
+      val height = history.height
       val version = if (height <= blockchainSettings.functionalitySettings.blockVersion3AfterHeight) PlainBlockVersion else NgBlockVersion
       val lastBlock = history.lastBlock.get
       val greatGrandParentTimestamp = history.parent(lastBlock, 2).map(_.timestamp)
@@ -100,7 +99,7 @@ class MinerImpl(
           val btg = calcBaseTarget(avgBlockDelay, height, referencedBlockInfo.consensus.baseTarget, referencedBlockInfo.timestamp, greatGrandParentTimestamp, currentTime)
           val gs = calcGeneratorSignature(referencedBlockInfo.consensus, account)
           val consensusData = NxtLikeConsensusBlockData(btg, ByteStr(gs))
-          val sortInBlock = history.height() <= blockchainSettings.functionalitySettings.dontRequireSortedTransactionsAfter
+          val sortInBlock = history.height <= blockchainSettings.functionalitySettings.dontRequireSortedTransactionsAfter
           val txAmount = if (ngEnabled) minerSettings.maxTransactionsInKeyBlock else ClassicAmountOfTxsInBlock
           val unconfirmed = utx.packUnconfirmed(txAmount, sortInBlock)
 
@@ -167,11 +166,11 @@ class MinerImpl(
     }
 
   private def generateBlockTask(account: PrivateKeyAccount): Task[Unit] = {
-    history.read { implicit l =>
-      val height = history.height()
+    {
+      val height = history.height
       val lastBlock = history.lastBlock.get
       for {
-        _ <- checkAge(height, history.lastBlockTimestamp().get)
+        _ <- checkAge(height, history.lastBlockTimestamp.get)
         ts <- nextBlockGenerationTime(height, stateReader, blockchainSettings.functionalitySettings, lastBlock, account, featureProvider)
         offset = calcOffset(timeService, ts, minerSettings.minimalBlockGenerationOffset)
         balance = generatingBalance(stateReader, blockchainSettings.functionalitySettings, account, height)
