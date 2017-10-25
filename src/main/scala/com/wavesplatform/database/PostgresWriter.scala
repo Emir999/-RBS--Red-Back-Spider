@@ -1,23 +1,33 @@
 package com.wavesplatform.database
 
+import java.io.StringReader
 import java.sql.Timestamp
+import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.locks.ReentrantLock
 import javax.sql.DataSource
 
 import com.google.common.cache.{CacheBuilder, CacheLoader}
 import com.wavesplatform.state2.reader.{LeaseDetails, StateReader}
 import com.wavesplatform.state2.{AssetDescription, AssetInfo, BlockDiff, ByteStr, LeaseInfo, OrderFillInfo, StateWriter, WavesBalance}
+import monix.execution.Scheduler
+import org.postgresql.copy.CopyManager
+import org.postgresql.core.BaseConnection
 import scalikejdbc.{DB, DBSession, using, _}
 import scorex.account.{Address, AddressOrAlias, Alias, PublicKeyAccount}
 import scorex.block.Block
+import scorex.transaction._
 import scorex.transaction.assets.exchange.ExchangeTransaction
 import scorex.transaction.assets.{IssueTransaction, TransferTransaction}
 import scorex.transaction.lease.{LeaseCancelTransaction, LeaseTransaction}
-import scorex.transaction.{CreateAliasTransaction, GenesisTransaction, PaymentTransaction, SignedTransaction}
 
 class PostgresWriter(ds: DataSource) extends StateReader with StateWriter {
   import PostgresWriter._
   private def readOnly[A](f: DBSession => A): A = using(DB(ds.getConnection))(_.readOnly(f))
+
+  private def localTx[A](f: DBSession => A): A = using(DB(ds.getConnection)) { db =>
+    db.localTx(f(_))
+  }
 
   override def nonZeroLeaseBalances = readOnly { implicit s =>
     sql"""with last_balance as (select address, max(height) height from lease_balances group by address)
@@ -225,49 +235,45 @@ class PostgresWriter(ds: DataSource) extends StateReader with StateWriter {
         .getOrElse(0L)
     }
 
-  override def append(blockDiff: BlockDiff, block: Block): Unit = {
-    using(DB(ds.getConnection)) { db =>
-      db.localTx { implicit s =>
-        val newHeight = sql"select coalesce(max(height), 0) from blocks".map(_.get[Int](1)).single().apply().fold(1)(_ + 1)
+  override def append(blockDiff: BlockDiff, block: Block): Unit = localTx { implicit s =>
+    val newHeight = sql"select coalesce(max(height), 0) from blocks".map(_.get[Int](1)).single().apply().fold(1)(_ + 1)
 
-        h.set(newHeight)
-        for {
-          (address, ls) <- blockDiff.snapshots
-        } {
-          ls.wavesBalance.foreach(balanceCache.put(address, _))
+    h.set(newHeight)
+    for {
+      (address, ls) <- blockDiff.snapshots
+    } {
+      ls.wavesBalance.foreach(balanceCache.put(address, _))
 
-          if (ls.assetBalances.nonEmpty) {
-            assetBalanceCache.put(address, assetBalanceCache.get(address) ++ ls.assetBalances)
-          }
-        }
-
-        storeBlocks(block, newHeight)
-        storeTransactions(blockDiff, newHeight)
-        storeIssuedAssets(blockDiff, newHeight)
-        storeReissuedAssets(blockDiff, newHeight)
-        storeFilledQuantity(blockDiff, newHeight)
-        storeLeaseInfo(blockDiff, newHeight)
-
-        sql"insert into lease_status (lease_id, active, height) values (?,?,?)"
-          .batch(blockDiff.txsDiff.transactions.collect {
-            case (_, (_, lt: LeaseTransaction, _)) => Seq(lt.id.base58, true, newHeight)
-            case (_, (_, lc: LeaseCancelTransaction, _)) => Seq(lc.leaseId.base58, false, newHeight)
-          }.toSeq: _*)
-          .apply()
-
-        storeLeaseBalances(blockDiff, newHeight)
-        storeWavesBalances(blockDiff, newHeight)
-        storeAssetBalances(blockDiff, newHeight)
-
-        sql"insert into aliases (alias, address, height) values (?,?,?)"
-          .batch(blockDiff.txsDiff.transactions.values.collect {
-            case (_, cat: CreateAliasTransaction, _) => Seq(cat.alias.bytes.arr, cat.sender.toAddress.address, newHeight)
-          }.toSeq: _*)
-          .apply()
-
-        storeAddressTransactionIds(blockDiff, newHeight)
+      if (ls.assetBalances.nonEmpty) {
+        assetBalanceCache.put(address, assetBalanceCache.get(address) ++ ls.assetBalances)
       }
     }
+
+    storeBlocks(block, newHeight)
+    storeIssuedAssets(blockDiff, newHeight)
+    storeReissuedAssets(blockDiff, newHeight)
+    storeFilledQuantity(blockDiff, newHeight)
+    storeLeaseInfo(blockDiff, newHeight)
+
+    sql"insert into lease_status (lease_id, active, height) values (?,?,?)"
+      .batch(blockDiff.txsDiff.transactions.collect {
+        case (_, (_, lt: LeaseTransaction, _)) => Seq(lt.id.base58, true, newHeight)
+        case (_, (_, lc: LeaseCancelTransaction, _)) => Seq(lc.leaseId.base58, false, newHeight)
+      }.toSeq: _*)
+      .apply()
+
+    storeLeaseBalances(blockDiff, newHeight)
+    storeWavesBalances(blockDiff, newHeight)
+    storeAssetBalances(blockDiff, newHeight)
+
+    sql"insert into aliases (alias, address, height) values (?,?,?)"
+      .batch(blockDiff.txsDiff.transactions.values.collect {
+        case (_, cat: CreateAliasTransaction, _) => Seq(cat.alias.bytes.arr, cat.sender.toAddress.address, newHeight)
+      }.toSeq: _*)
+      .apply()
+
+    lock.lock()
+    try blocksAdded.signal() finally lock.unlock()
   }
 
   private def storeWavesBalances(blockDiff: BlockDiff, newHeight: Int)(implicit session: DBSession) =
@@ -291,19 +297,6 @@ class PostgresWriter(ds: DataSource) extends StateReader with StateWriter {
         (address, p) <- blockDiff.txsDiff.portfolios
         if p.leaseInfo.leaseIn != 0 || p.leaseInfo.leaseOut != 0
       } yield Seq(p.leaseInfo.leaseIn, p.leaseInfo.leaseOut, newHeight, address.address, address.address)).toSeq: _*)
-      .apply()
-  }
-
-  private def storeAddressTransactionIds(blockDiff: BlockDiff, newHeight: Int)(implicit session: DBSession) = {
-    sql"insert into address_transaction_ids (address, tx_id, signature, height) values (?,?,?,?)"
-      .batch((for {
-        (_, (_, tx, addresses)) <- blockDiff.txsDiff.transactions
-        address <- addresses
-      } yield tx match {
-        case pt: PaymentTransaction => Seq(address.address, ByteStr(pt.hash).base58, pt.signature.base58, newHeight)
-        case t: SignedTransaction => Seq(address.address, t.id.base58, t.signature.base58, newHeight)
-        case gt: GenesisTransaction => Seq(address.address, gt.id.base58, gt.signature.base58, newHeight)
-      }).toSeq: _*)
       .apply()
   }
 
@@ -375,40 +368,91 @@ class PostgresWriter(ds: DataSource) extends StateReader with StateWriter {
       .update()
       .apply()
 
-  private def storeTransactions(blockDiff: BlockDiff, newHeight: Int)(implicit session: DBSession) = {
+  private implicit val scheduler = Scheduler(Executors.newSingleThreadExecutor())
+
+  private def storeAddressTransactionIds(blockDiff: BlockDiff, newHeight: Int)(implicit session: DBSession) = {
+    val input = for {
+      (_, (_, tx, addresses)) <- blockDiff.txsDiff.transactions
+      address <- addresses
+    } yield tx match {
+      case pt: PaymentTransaction => s"${address.address},${ByteStr(pt.hash).base58},${pt.signature.base58},$newHeight"
+      case t: SignedTransaction => s"${address.address},${t.id.base58},${t.signature.base58},$newHeight"
+      case gt: GenesisTransaction => s"${address.address},${gt.id.base58},${gt.signature.base58},$newHeight"
+    }
+
+    new CopyManager(session.connection.unwrap(classOf[BaseConnection])).copyIn(
+      "copy address_transaction_ids (address, tx_id, signature, height) from stdin with (format csv)",
+      new StringReader(input.mkString("\n"))
+    )
+  }
+
+  private def storeTransactions(transactions: Seq[Transaction], newHeight: Int)(implicit session: DBSession) = {
     val exchangeParams = Seq.newBuilder[Seq[Any]]
     val transferParams = Seq.newBuilder[Seq[Any]]
     val transactionParams = Seq.newBuilder[Seq[Any]]
 
-    blockDiff.txsDiff.transactions.values.foreach {
-      case (_, pt: PaymentTransaction, _) =>
-        transactionParams += Seq(ByteStr(pt.hash).base58, pt.signature.base58, transactionTypes(pt.transactionType.id - 1), newHeight)
-      case (_, t: SignedTransaction, _) =>
-        transactionParams += Seq(t.id.base58, t.signature.base58, transactionTypes(t.transactionType.id - 1), newHeight)
+    transactions.foreach {
+      case pt: PaymentTransaction =>
+        transactionParams += Seq(ByteStr(pt.hash).base58, pt.signature.base58, transactionTypes(pt.transactionType.id - 1), "{}", newHeight)
+      case t: SignedTransaction =>
+        transactionParams += Seq(t.id.base58, t.signature.base58, transactionTypes(t.transactionType.id - 1),  "{}", newHeight)
         t match {
           case et: ExchangeTransaction =>
-            exchangeParams += Seq(et.id.base58, et.buyOrder.assetPair.amountAsset.map(_.base58),
-              et.buyOrder.assetPair.priceAsset.map(_.base58), et.amount, et.price, newHeight)
+            exchangeParams += Seq(et.id.base58, et.buyOrder.assetPair.amountAsset.map(_.base58).getOrElse(""),
+              et.buyOrder.assetPair.priceAsset.map(_.base58).getOrElse(""), et.amount, et.price, newHeight)
           case tt: TransferTransaction =>
-            transferParams += Seq(tt.id.base58, tt.sender.address, tt.recipient.stringRepr, tt.assetId.map(_.base58), tt.amount,
-              tt.feeAssetId.map(_.base58), tt.fee, newHeight)
+            transferParams += Seq(tt.id.base58, tt.sender.address, tt.recipient.stringRepr, tt.assetId.map(_.base58).getOrElse(""), tt.amount,
+              tt.feeAssetId.map(_.base58).getOrElse(""), tt.fee, newHeight)
           case _ =>
         }
-      case (_, gt: GenesisTransaction, _) =>
-        transactionParams += Seq(gt.id.base58, gt.signature.base58, transactionTypes(gt.transactionType.id - 1), newHeight)
+      case gt: GenesisTransaction =>
+        transactionParams += Seq(gt.id.base58, gt.signature.base58, transactionTypes(gt.transactionType.id - 1), "{}", newHeight)
     }
 
-    sql"insert into transactions (tx_id, signature, tx_type, tx_json, height) values (?,?,?::tx_type_id_type,'{}'::json,?)"
-      .batch(transactionParams.result(): _*)
-      .apply()
+    val copyManager = new CopyManager(session.connection.unwrap(classOf[BaseConnection]))
 
-    sql"insert into exchange_transactions (tx_id, amount_asset_id, price_asset_id, amount, price, height) values (?,?,?,?,?,?)"
-      .batch(exchangeParams.result(): _*)
-      .apply()
+    copyManager.copyIn(
+      "copy transactions (tx_id, signature, tx_type, tx_json, height) from stdin with (format csv)",
+      new StringReader(transactionParams.result().map(_.mkString(",")).mkString("\n")))
 
-    sql"insert into transfer_transactions (tx_id, sender, recipient, asset_id, amount, fee_asset_id, fee, height) values (?,?,?,?,?,?,?,?)"
-      .batch(transferParams.result(): _*)
-      .apply()
+    copyManager.copyIn(
+      "copy exchange_transactions (tx_id, amount_asset_id, price_asset_id, amount, price, height) from stdin with (format csv)",
+      new StringReader(exchangeParams.result().map(_.mkString(",")).mkString("\n")))
+
+    copyManager.copyIn(
+      "copy transfer_transactions (tx_id, sender, recipient, asset_id, amount, fee_asset_id, fee, height) from stdin with (format csv)",
+      new StringReader(transferParams.result().map(_.mkString(",")).mkString("\n")))
+  }
+
+  private val lock = new ReentrantLock()
+  private val blocksAdded = lock.newCondition()
+
+  {
+    val t = new Thread(() => while (true) {
+      lock.lock()
+      try {
+        blocksAdded.await()
+
+        localTx { implicit s =>
+          sql"""with max_transaction_height as (select max(height) height from transactions)
+               |select blocks.height, blocks.block_data_bytes from blocks, max_transaction_height
+               |where blocks.height > max_transaction_height.height
+               |and blocks.tx_count > 0
+               |order by blocks.height asc
+               |limit 5
+             """.stripMargin
+            .map(rs => rs.get[Int](1) -> Block.parseBytes(rs.get[Array[Byte]](2)).get.transactionData)
+            .list()
+            .apply()
+            .foreach {
+              case (height, transactions) => storeTransactions(transactions, height)
+            }
+        }
+
+      } finally lock.unlock()
+    }, "transaction-updater")
+    t.setDaemon(true)
+    t.run()
   }
 
   override def rollbackTo(targetBlockId: ByteStr) = ???

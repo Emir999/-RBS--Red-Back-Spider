@@ -4,6 +4,7 @@ import java.util.Properties
 import javax.sql.DataSource
 
 import com.typesafe.config.Config
+import com.wavesplatform.settings.Constants
 import com.zaxxer.hikari.{HikariConfig, HikariDataSource}
 import org.flywaydb.core.Flyway
 
@@ -30,6 +31,8 @@ package object database {
       props.setProperty("incrementalVacuum", "-1")
       props.getProperty("journalMode", "WAL")
     } else if (jdbcUrl.startsWith("jdbc:postgresql:")) {
+      props.setProperty("ApplicationName", Constants.AgentName)
+      props.setProperty("reWriteBatchedInserts", "true")
       hc.setDataSourceClassName("org.postgresql.ds.PGSimpleDataSource")
       flyway.setLocations("db/migration/postgresql")
       fillFromConfig(config, "postgresql", props)

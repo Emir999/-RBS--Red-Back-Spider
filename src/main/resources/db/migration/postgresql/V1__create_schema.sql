@@ -36,7 +36,8 @@ create table blocks (
     block_timestamp timestamp not null,
     generator_address address_type,
     block_data_bytes bytea not null,
-    score bigint not null
+    score bigint not null,
+    tx_count int not null
 );
 
 create table waves_balances (
@@ -159,6 +160,7 @@ create table address_transaction_ids (
 
 create index address_transaction_ids_height_index on address_transaction_ids(height);
 create index address_transaction_ids_tx_id_index on address_transaction_ids(tx_id, signature);
+create index address_transaction_ids_address_index on address_transaction_ids(address);
 
 create table payment_transactions (
     tx_hash digest_type primary key,
