@@ -9,6 +9,7 @@ import com.wavesplatform.settings.{BlockchainSettings, FunctionalitySettings, Wa
 import com.wavesplatform.state2._
 import com.wavesplatform.state2.reader.SnapshotStateReader
 import kamon.Kamon
+import monix.eval.Coeval
 import org.influxdb.dto.Point
 import scorex.block.{Block, MicroBlock}
 import scorex.consensus.TransactionsOrdering
@@ -24,7 +25,8 @@ object Coordinator extends ScorexLogging with Instrumented {
   def processFork(checkpoint: CheckpointService, history: History, blockchainUpdater: BlockchainUpdater,
                   stateReader: StateReader, utxStorage: UtxPool, time: Time, settings: WavesSettings,
                   blockchainReadiness: AtomicBoolean, featureProvider: FeatureProvider)
-                 (newBlocks: Seq[Block]): Either[ValidationError, Option[BigInt]] = history.write { implicit l =>
+                 (blocks: Seq[Block]): Either[ValidationError, Option[BigInt]] =  Signed.validateOrdered(blocks).flatMap { newBlocks =>
+   history.write { implicit l =>
     val extension = newBlocks.dropWhile(history.contains)
 
     extension.headOption.map(_.reference) match {
@@ -33,7 +35,7 @@ object Coordinator extends ScorexLogging with Instrumented {
         def isForkValidWithCheckpoint(lastCommonHeight: Int): Boolean =
           extension.zipWithIndex.forall(p => checkpoint.isBlockValid(p._1.signerData.signature, lastCommonHeight + 1 + p._2))
 
-        lazy val forkApplicationResultEi: Either[ValidationError, BigInt] = {
+        val forkApplicationResultEi = Coeval.evalOnce {
           val firstDeclined = extension.view.map { b =>
             b -> appendBlock(checkpoint, history, blockchainUpdater, stateReader(), utxStorage, time, settings.blockchainSettings, featureProvider)(b).right.map {
               _.foreach(bh => BlockStats.applied(b, BlockStats.Source.Ext, bh))
@@ -73,7 +75,7 @@ object Coordinator extends ScorexLogging with Instrumented {
         (for {
           commonHeightAndDroppedBlocks <- droppedBlocksEi
           (commonBlockHeight, droppedBlocks) = commonHeightAndDroppedBlocks
-          score <- forkApplicationResultEi.left.map((_, droppedBlocks))
+          score <- forkApplicationResultEi().left.map((_, droppedBlocks))
         } yield (commonBlockHeight, droppedBlocks, score))
           .right.map { case ((commonBlockHeight, droppedBlocks, score)) =>
           val depth = initalHeight - commonBlockHeight
@@ -97,6 +99,8 @@ object Coordinator extends ScorexLogging with Instrumented {
         Right(None)
     }
   }
+  }
+
 
 
   def updateBlockchainReadinessFlag(history: History, time: Time, blockchainReadiness: AtomicBoolean, maxBlockchainAge: FiniteDuration): Boolean = {
