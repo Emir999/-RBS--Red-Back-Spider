@@ -19,7 +19,6 @@ import scorex.transaction._
 import scorex.utils.{ScorexLogging, Time}
 
 import scala.collection.JavaConverters._
-import scala.concurrent.blocking
 import scala.concurrent.duration._
 import scala.util.{Left, Right}
 
@@ -67,11 +66,9 @@ class UtxPool(time: Time,
           val s = stateReader()
           val res = for {
             _ <- Either.cond(transactions.size < utxSettings.maxSize, (), GenericError("Transaction pool size limit is reached"))
-            _ <- feeCalculator.enoughFee(tx)
-            diff <- blocking(TransactionDiffer(fs, blocking(history.lastBlockTimestamp()), time.correctedTime(), s.height)(s, tx))
           } yield {
             utxPoolSizeStats.increment()
-            pessimisticPortfolios.add(tx.id(), diff)
+            pessimisticPortfolios.add(tx.id(), Diff.empty)
             transactions.put(tx.id(), tx)
             tx
           }
