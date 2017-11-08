@@ -146,7 +146,7 @@ object Coordinator extends ScorexLogging with Instrumented {
     maybeDiscardedTxs <- blockchainUpdater.processBlock(block)
   } yield {
     utxStorage.removeAll(block.transactionData)
-    maybeDiscardedTxs.toSeq.flatten.foreach(utxStorage.putIfNew)
+//    maybeDiscardedTxs.toSeq.flatten.foreach(utxStorage.putIfNew)
     maybeDiscardedTxs.map(_ => baseHeight)
   }
 
