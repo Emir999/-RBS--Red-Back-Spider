@@ -64,16 +64,15 @@ class UtxPool(time: Time,
         case Some(Right(_)) => Right(false)
         case Some(Left(er)) => Left(er)
         case None =>
-          val s = stateReader()
           val res = for {
             _ <- Either.cond(transactions.size < utxSettings.maxSize, (), GenericError("Transaction pool size limit is reached"))
             _ <- feeCalculator.enoughFee(tx)
           } yield {
             utxPoolSizeStats.increment()
-            transactions.put(tx.id, tx)
+            transactions.put(tx.id(), tx)
             tx
           }
-          knownTransactions.put(tx.id, res)
+          knownTransactions.put(tx.id(), res)
           res.right.map(_ => true)
       }
     })

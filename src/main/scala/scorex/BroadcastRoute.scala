@@ -31,7 +31,7 @@ trait BroadcastRoute {
   protected def doBroadcastTrusted(v: Either[ValidationError, Transaction]): Future[Either[ApiError, Transaction]] = Future {
     (for {
       tx <- v
-      utxResult <- utx.putIfNew(tx)
+      utxResult <- utx.putIfNewTrusted(tx)
     } yield {
       if (utxResult) {
         allChannels.broadcastTx(tx, None)
