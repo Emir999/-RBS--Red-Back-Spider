@@ -57,6 +57,28 @@ class UtxPool(time: Time,
       }
   }
 
+  def putIfNewTrusted(tx: Transaction): Either[ValidationError, Boolean] = {
+    putRequestStats.increment()
+    measureSuccessful(processingTimeStats, {
+      Option(knownTransactions.getIfPresent(tx.id)) match {
+        case Some(Right(_)) => Right(false)
+        case Some(Left(er)) => Left(er)
+        case None =>
+          val s = stateReader()
+          val res = for {
+            _ <- Either.cond(transactions.size < utxSettings.maxSize, (), GenericError("Transaction pool size limit is reached"))
+            _ <- feeCalculator.enoughFee(tx)
+          } yield {
+            utxPoolSizeStats.increment()
+            transactions.put(tx.id, tx)
+            tx
+          }
+          knownTransactions.put(tx.id, res)
+          res.right.map(_ => true)
+      }
+    })
+  }
+
   def putIfNew(tx: Transaction): Either[ValidationError, Boolean] = {
     putRequestStats.increment()
     measureSuccessful(processingTimeStats, {

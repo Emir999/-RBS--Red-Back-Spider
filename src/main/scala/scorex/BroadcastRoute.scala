@@ -27,4 +27,17 @@ trait BroadcastRoute {
     }).left.map(ApiError.fromValidationError)
 
   }
+
+  protected def doBroadcastTrusted(v: Either[ValidationError, Transaction]): Future[Either[ApiError, Transaction]] = Future {
+    (for {
+      tx <- v
+      utxResult <- utx.putIfNew(tx)
+    } yield {
+      if (utxResult) {
+        allChannels.broadcastTx(tx, None)
+      }
+      tx
+    }).left.map(ApiError.fromValidationError)
+
+  }
 }

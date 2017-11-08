@@ -110,7 +110,7 @@ case class AssetsBroadcastApiRoute(
   def batchTransfer: Route = (path("batch-transfer") & post) {
     json[Seq[SignedTransferRequest]] { reqs =>
       Future
-        .sequence(reqs.map(r => doBroadcast(r.toTx)))
+        .sequence(reqs.map(r => doBroadcastTrusted(r.toTx)))
         .map(_.map(_.fold(_.json, _.json)))
     }
   }
