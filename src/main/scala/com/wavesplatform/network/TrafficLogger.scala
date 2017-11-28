@@ -1,9 +1,13 @@
 package com.wavesplatform.network
 
+import com.wavesplatform.metrics.Metrics
 import io.netty.channel.ChannelHandler.Sharable
 import io.netty.channel.{ChannelDuplexHandler, ChannelHandlerContext, ChannelPromise}
+import org.influxdb.dto.Point
+import scorex.crypto.encode.Base58
+import scorex.crypto.hash.Sha256
 import scorex.network.message.{Message => ScorexMessage}
-import scorex.utils.ScorexLogging
+import scorex.utils.{HashHelpers, ScorexLogging}
 
 @Sharable
 class TrafficLogger(settings: TrafficLogger.Settings) extends ChannelDuplexHandler with ScorexLogging {
@@ -25,7 +29,11 @@ class TrafficLogger(settings: TrafficLogger.Settings) extends ChannelDuplexHandl
 
     msg match {
       // Have no spec
-      case x: RawBytes => ignoreMessages(x.code)
+      case x: RawBytes =>
+        if (x.code == TransactionMessageSpec.messageCode) {
+          Metrics.write(Point.measurement("txspeed").addField("txid", Base58.encode(Sha256.hash(x.data))))
+        }
+        ignoreMessages(x.code)
       case _: LocalScoreChanged => ignoreMessages(ScoreMessageSpec.messageCode)
       case BlockForged(b) => ignoreMessages(BlockMessageSpec.messageCode)
 
