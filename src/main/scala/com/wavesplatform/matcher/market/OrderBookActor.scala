@@ -8,9 +8,11 @@ import com.wavesplatform.matcher.MatcherSettings
 import com.wavesplatform.matcher.api.{CancelOrderRequest, MatcherResponse}
 import com.wavesplatform.matcher.market.OrderBookActor._
 import com.wavesplatform.matcher.market.OrderHistoryActor._
+import com.wavesplatform.matcher.market.OrderValidatorActor.{ValidateCancelOrder, ValidateCancelResult, ValidateOrder, ValidateOrderResult}
 import com.wavesplatform.matcher.model.Events.{Event, ExchangeTransactionCreated, OrderAdded, OrderExecuted}
 import com.wavesplatform.matcher.model.MatcherModel._
 import com.wavesplatform.matcher.model._
+import com.wavesplatform.network._
 import com.wavesplatform.settings.FunctionalitySettings
 import com.wavesplatform.state2.reader.StateReader
 import io.netty.channel.group.ChannelGroup
@@ -26,8 +28,6 @@ import scala.annotation.tailrec
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.duration._
 
-import com.wavesplatform.network._
-
 class OrderBookActor(assetPair: AssetPair,
                      val orderHistory: ActorRef,
                      val storedState: StateReader,
@@ -36,13 +36,21 @@ class OrderBookActor(assetPair: AssetPair,
                      val allChannels: ChannelGroup,
                      val settings: MatcherSettings,
                      val history: History,
-                     val functionalitySettings: FunctionalitySettings)
+                     val functionalitySettings: FunctionalitySettings,
+                     val orderHistoryStorage: OrderHistory)
   extends PersistentActor with Stash with ScorexLogging with ExchangeTransactionCreator {
   override def persistenceId: String = OrderBookActor.name(assetPair)
 
   private var orderBook = OrderBook.empty
 
   context.system.scheduler.schedule(settings.snapshotsInterval, settings.snapshotsInterval, self, SaveSnapshot)
+
+  var orderValidator: ActorRef = createValidator()
+
+  def createValidator(): ActorRef = {
+    context.actorOf(OrderValidatorActor.props(settings, utx, wallet, orderHistoryStorage),
+      OrderValidatorActor.name + "-" + OrderBookActor.name(assetPair))
+  }
 
   override def postStop(): Unit = {
     log.info(context.self.toString() + " - postStop method")
@@ -106,7 +114,7 @@ class OrderBookActor(assetPair: AssetPair,
   }
 
   def onCancelOrder(cancel: CancelOrder): Unit = {
-    orderHistory ! ValidateCancelOrder(cancel, NTP.correctedTime())
+    orderValidator ! ValidateCancelOrder(cancel, NTP.correctedTime())
     apiSender = Some(sender())
     cancellable = Some(context.system.scheduler.scheduleOnce(ValidationTimeout, self, ValidationTimeoutExceeded))
     context.become(waitingValidation)
@@ -157,7 +165,7 @@ class OrderBookActor(assetPair: AssetPair,
   }
 
   def onAddOrder(order: Order): Unit = {
-    orderHistory ! ValidateOrder(order, NTP.correctedTime())
+    orderValidator ! ValidateOrder(order, NTP.correctedTime())
     apiSender = Some(sender())
     cancellable = Some(context.system.scheduler.scheduleOnce(ValidationTimeout, self, ValidationTimeoutExceeded))
     context.become(waitingValidation)
@@ -264,8 +272,8 @@ class OrderBookActor(assetPair: AssetPair,
 object OrderBookActor {
   def props(assetPair: AssetPair, orderHistory: ActorRef, storedState: StateReader, settings: MatcherSettings,
             wallet: Wallet, utx: UtxPool, allChannels: ChannelGroup, history: History,
-            functionalitySettings: FunctionalitySettings): Props =
-    Props(new OrderBookActor(assetPair, orderHistory, storedState, wallet, utx, allChannels, settings, history, functionalitySettings))
+            functionalitySettings: FunctionalitySettings, orderHistoryStorage: OrderHistory): Props =
+    Props(new OrderBookActor(assetPair, orderHistory, storedState, wallet, utx, allChannels, settings, history, functionalitySettings, orderHistoryStorage))
 
   def name(assetPair: AssetPair): String = assetPair.toString
 

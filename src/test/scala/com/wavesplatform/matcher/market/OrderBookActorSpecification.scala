@@ -1,6 +1,6 @@
 package com.wavesplatform.matcher.market
 
-import akka.actor.{Actor, ActorSystem, Props}
+import akka.actor.{Actor, ActorRef, ActorSystem, Props}
 import akka.persistence.inmemory.extension.{InMemoryJournalStorage, InMemorySnapshotStorage, StorageExtension}
 import akka.testkit.{ImplicitSender, TestActorRef, TestKit, TestProbe}
 import com.wavesplatform.UtxPool
@@ -8,12 +8,13 @@ import com.wavesplatform.matcher.MatcherTestData
 import com.wavesplatform.matcher.fixtures.RestartableActor
 import com.wavesplatform.matcher.fixtures.RestartableActor.RestartActor
 import com.wavesplatform.matcher.market.OrderBookActor._
-import com.wavesplatform.matcher.market.OrderHistoryActor.{ValidateOrder, ValidateOrderResult}
+import com.wavesplatform.matcher.market.OrderValidatorActor.{ValidateOrder, ValidateOrderResult}
 import com.wavesplatform.matcher.model.Events.Event
-import com.wavesplatform.matcher.model.{BuyLimitOrder, LimitOrder, SellLimitOrder}
+import com.wavesplatform.matcher.model._
 import com.wavesplatform.settings.{Constants, FunctionalitySettings, WalletSettings}
 import com.wavesplatform.state2.reader.StateReader
 import com.wavesplatform.state2.{ByteStr, LeaseInfo, Portfolio}
+import com.wavesplatform.utils.createMVStore
 import io.netty.channel.group.ChannelGroup
 import org.h2.mvstore.MVStore
 import org.scalamock.scalatest.PathMockFactory
@@ -68,6 +69,7 @@ class OrderBookActorSpecification extends TestKit(ActorSystem("MatcherTest"))
   val wallet = Wallet(WalletSettings(None, "matcher", Some(WalletSeed)))
   wallet.generateNewAccount()
 
+  val oh: OrderHistory = OrderHistoryImpl(new OrderHistoryStorage(createMVStore(None)))
   val orderHistoryRef = TestActorRef(new Actor {
     def receive: Receive = {
       case ValidateOrder(o, _) => sender() ! ValidateOrderResult(Right(o))
@@ -76,7 +78,9 @@ class OrderBookActorSpecification extends TestKit(ActorSystem("MatcherTest"))
   })
 
   var actor = system.actorOf(Props(new OrderBookActor(pair, orderHistoryRef, storedState,
-    wallet, stub[UtxPool], stub[ChannelGroup], settings, stub[History], FunctionalitySettings.TESTNET) with RestartableActor))
+    wallet, stub[UtxPool], stub[ChannelGroup], settings, stub[History], FunctionalitySettings.TESTNET, oh) with RestartableActor {
+    override def createValidator(): ActorRef = orderHistoryRef
+  }))
 
 
   override protected def beforeEach() = {
@@ -94,7 +98,9 @@ class OrderBookActorSpecification extends TestKit(ActorSystem("MatcherTest"))
     (utx.putIfNew _).when(*).onCall((tx: Transaction) => Right(true))
     val allChannels = stub[ChannelGroup]
     actor = system.actorOf(Props(new OrderBookActor(pair, orderHistoryRef, storedState,
-      wallet, utx, allChannels, settings, history, functionalitySettings) with RestartableActor))
+      wallet, utx, allChannels, settings, history, functionalitySettings, oh) with RestartableActor {
+      override def createValidator(): ActorRef = orderHistoryRef
+    }))
 
     eventsProbe = TestProbe()
     system.eventStream.subscribe(eventsProbe.ref, classOf[Event])
@@ -280,7 +286,9 @@ class OrderBookActorSpecification extends TestKit(ActorSystem("MatcherTest"))
       }
       val allChannels = stub[ChannelGroup]
       actor = system.actorOf(Props(new OrderBookActor(pair, orderHistoryRef, storedState,
-        wallet, pool, allChannels, settings, history, functionalitySettings) with RestartableActor))
+        wallet, pool, allChannels, settings, history, functionalitySettings, oh) with RestartableActor {
+        override def createValidator(): ActorRef = orderHistoryRef
+      }))
 
       actor ! ord1
       expectMsg(OrderAccepted(ord1))

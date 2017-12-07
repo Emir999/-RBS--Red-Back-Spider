@@ -6,12 +6,14 @@ import akka.actor.{ActorRef, ActorSystem}
 import akka.http.scaladsl.Http
 import akka.http.scaladsl.Http.ServerBinding
 import akka.stream.ActorMaterializer
-import com.wavesplatform.UtxPool
+import com.wavesplatform.{UtxPool, utils}
 import com.wavesplatform.matcher.api.MatcherApiRoute
 import com.wavesplatform.matcher.market.{MatcherActor, MatcherTransactionWriter, OrderHistoryActor}
+import com.wavesplatform.matcher.model.{OrderHistory, OrderHistoryImpl, OrderHistoryStorage}
 import com.wavesplatform.settings.{BlockchainSettings, RestAPISettings}
 import com.wavesplatform.state2.reader.StateReader
 import io.netty.channel.group.ChannelGroup
+import org.h2.mvstore.MVStore
 import scorex.api.http.CompositeHttpService
 import scorex.transaction.History
 import scorex.utils.ScorexLogging
@@ -38,9 +40,12 @@ class Matcher(actorSystem: ActorSystem,
   )
 
   lazy val matcher: ActorRef = actorSystem.actorOf(MatcherActor.props(orderHistory, stateReader, wallet, utx, allChannels,
-    matcherSettings, history, blockchainSettings.functionalitySettings), MatcherActor.name)
+    matcherSettings, history, blockchainSettings.functionalitySettings, orderHistoryStorage), MatcherActor.name)
 
-  lazy val orderHistory: ActorRef = actorSystem.actorOf(OrderHistoryActor.props(matcherSettings, utx, wallet),
+  lazy val db: MVStore = utils.createMVStore(matcherSettings.orderHistoryFile)
+  lazy val orderHistoryStorage: OrderHistory = OrderHistoryImpl(new OrderHistoryStorage(db))
+
+  lazy val orderHistory: ActorRef = actorSystem.actorOf(OrderHistoryActor.props(matcherSettings, utx, wallet, orderHistoryStorage),
     OrderHistoryActor.name)
 
   lazy val txWriter: ActorRef = actorSystem.actorOf(MatcherTransactionWriter.props(matcherSettings),
@@ -49,6 +54,8 @@ class Matcher(actorSystem: ActorSystem,
   @volatile var matcherServerBinding: ServerBinding = _
 
   def shutdownMatcher(): Unit = {
+    db.commit()
+    db.close()
     Await.result(matcherServerBinding.unbind(), 10.seconds)
   }
 

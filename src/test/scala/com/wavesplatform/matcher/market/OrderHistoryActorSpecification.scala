@@ -4,9 +4,11 @@ import akka.actor.{ActorRef, ActorSystem, Props}
 import akka.testkit.{ImplicitSender, TestKit}
 import com.wavesplatform.UtxPool
 import com.wavesplatform.matcher.market.OrderHistoryActor.GetOrderHistory
+import com.wavesplatform.matcher.model.{OrderHistory, OrderHistoryImpl, OrderHistoryStorage}
 import com.wavesplatform.matcher.{MatcherSettings, MatcherTestData}
 import com.wavesplatform.settings.WalletSettings
 import com.wavesplatform.state2.ByteStr
+import com.wavesplatform.utils.createMVStore
 import org.scalamock.scalatest.PathMockFactory
 import org.scalatest.{BeforeAndAfterAll, BeforeAndAfterEach, Matchers, WordSpecLike}
 import scorex.transaction.assets.exchange.AssetPair
@@ -33,12 +35,14 @@ class OrderHistoryActorSpecification extends TestKit(ActorSystem("MatcherTest"))
   val wallet = Wallet(WalletSettings(None, "matcher", Some(WalletSeed)))
   wallet.generateNewAccount()
 
-  var actor: ActorRef = system.actorOf(Props(new OrderHistoryActor(settings, utxPool, wallet)))
+  val oh: OrderHistory = OrderHistoryImpl(new OrderHistoryStorage(createMVStore(None)))
+
+  var actor: ActorRef = system.actorOf(Props(new OrderHistoryActor(settings, utxPool, wallet, oh)))
 
   override protected def beforeEach(): Unit = {
     super.beforeEach()
 
-    actor = system.actorOf(Props(new OrderHistoryActor(settings, utxPool, wallet)))
+    actor = system.actorOf(Props(new OrderHistoryActor(settings, utxPool, wallet, oh)))
   }
   "OrderHistoryActor" should {
 

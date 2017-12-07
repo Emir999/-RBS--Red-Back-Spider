@@ -22,12 +22,8 @@ import scorex.wallet.Wallet
 import scala.concurrent.duration._
 import scala.language.postfixOps
 
-class OrderHistoryActor(val settings: MatcherSettings, val utxPool: UtxPool, val wallet: Wallet)
+class OrderHistoryActor(val settings: MatcherSettings, val utxPool: UtxPool, val wallet: Wallet, val orderHistory: OrderHistory)
   extends Actor with OrderValidator {
-
-  val db: MVStore = utils.createMVStore(settings.orderHistoryFile)
-  val storage = new OrderHistoryStorage(db)
-  val orderHistory = OrderHistoryImpl(storage)
 
   override def preStart(): Unit = {
     context.system.eventStream.subscribe(self, classOf[OrderAdded])
@@ -35,20 +31,11 @@ class OrderHistoryActor(val settings: MatcherSettings, val utxPool: UtxPool, val
     context.system.eventStream.subscribe(self, classOf[OrderCanceled])
   }
 
-  override def postStop(): Unit = {
-    db.commit()
-    db.close()
-  }
-
   def processExpirableRequest(r: Any): Unit = r match {
     case req: GetOrderHistory =>
       fetchOrderHistory(req)
     case req: GetAllOrderHistory =>
       fetchAllOrderHistory(req)
-    case ValidateOrder(o, ts) =>
-      sender() ! ValidateOrderResult(validateNewOrder(o))
-    case ValidateCancelOrder(co, _) =>
-      sender() ! ValidateCancelResult(validateCancelOrder(co))
     case req: DeleteOrderFromHistory =>
       deleteFromOrderHistory(req)
     case GetOrderStatus(_, id, _) =>
@@ -141,21 +128,17 @@ object OrderHistoryActor {
   val RequestTTL: Int = 5*1000
   val UpdateOpenPortfolioDelay: FiniteDuration = 30 seconds
   def name = "OrderHistory"
-  def props(settings: MatcherSettings, utxPool: UtxPool, wallet: Wallet): Props =
-    Props(new OrderHistoryActor(settings, utxPool, wallet))
+  def props(settings: MatcherSettings, utxPool: UtxPool, wallet: Wallet, orderHistory: OrderHistory): Props =
+    Props(new OrderHistoryActor(settings, utxPool, wallet, orderHistory))
 
   sealed trait OrderHistoryRequest
-  sealed trait ExpirableOrderHistoryRequest extends OrderHistoryRequest {
+  trait ExpirableOrderHistoryRequest extends OrderHistoryRequest {
     def ts: Long
   }
   case class GetOrderHistory(assetPair: AssetPair, address: String, ts: Long) extends ExpirableOrderHistoryRequest
   case class GetAllOrderHistory(address: String, ts: Long) extends ExpirableOrderHistoryRequest
   case class GetOrderStatus(assetPair: AssetPair, id: String, ts: Long) extends ExpirableOrderHistoryRequest
   case class DeleteOrderFromHistory(assetPair: AssetPair, address: String, id: String, ts: Long) extends ExpirableOrderHistoryRequest
-  case class ValidateOrder(order: Order, ts: Long) extends ExpirableOrderHistoryRequest
-  case class ValidateOrderResult(result: Either[GenericError, Order])
-  case class ValidateCancelOrder(cancel: CancelOrder, ts: Long) extends ExpirableOrderHistoryRequest
-  case class ValidateCancelResult(result: Either[GenericError, CancelOrder])
   case class RecoverFromOrderBook(ob: OrderBook) extends OrderHistoryRequest
   case class ForceCancelOrder(orderId: String) extends OrderHistoryRequest
 
