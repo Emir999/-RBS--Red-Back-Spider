@@ -80,6 +80,7 @@ class OrderBookActor(assetPair: AssetPair,
       handleValidateOrderResult(res)
     case ValidateCancelResult(res) =>
       cancellable.foreach(_.cancel())
+
       handleValidateCancelResult(res.map(x => x.orderId))
     case ev =>
       log.info("Stashed: " + ev)

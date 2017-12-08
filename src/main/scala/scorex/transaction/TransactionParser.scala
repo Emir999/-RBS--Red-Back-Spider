@@ -20,6 +20,20 @@ object TransactionParser {
     val LeaseTransaction = Value(8)
     val LeaseCancelTransaction = Value(9)
     val CreateAliasTransaction = Value(10)
+
+    def fromString(value: String): Value =
+      value match {
+        case "GenesisTransaction" => GenesisTransaction
+        case "PaymentTransaction" => PaymentTransaction
+        case "IssueTransaction" => IssueTransaction
+        case "TransferTransaction" => TransferTransaction
+        case "ReissueTransaction" => ReissueTransaction
+        case "BurnTransaction" => BurnTransaction
+        case "ExchangeTransaction" => ExchangeTransaction
+        case "LeaseTransaction" => LeaseTransaction
+        case "LeaseCancelTransaction" => LeaseCancelTransaction
+        case "CreateAliasTransaction" => CreateAliasTransaction
+      }
   }
 
   val TimestampLength = 8
